@@ -14,15 +14,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = join(__dirname, '..', 'data', 'latest.json');
 
 export const SEARCH_TERMS = [
-  'pan de molde',
-  'pan lactal',
-  'pan lacteado',
-  'pan sandwich',
-  'pan tortuga',
+  'pan bimbo', 'bimbo pan', 'bimbo artesano', 'los sorchantes', 'sorchantes',
+  'pan de molde', 'pan lactal', 'pan sandwich',
+  'pan tortuga', 'pan hamburguesa',
   'pan viena',
-  'bimbo',
-  'los sorchantes',
-  'sorchantes',
+  'magno pan', 'pan magno',
+  'bauducco',
+  'visconti pan', 'pan visconti',
+  'marbella pan', 'pan marbella',
+  'precio lider pan', 'pan precio lider',
 ];
 
 export async function runScrape() {

@@ -1,6 +1,6 @@
 /**
  * Góndola Competencia — Frontend Application
- * Single-page competitive price monitoring dashboard.
+ * Two-view SPA: home (category cards) → category detail.
  * Pure vanilla JS, ES modules. Chart.js loaded from CDN.
  */
 
@@ -11,9 +11,9 @@
 const CATEGORIES = ['Pan de Molde', 'Pan de Viena', 'Pan de Tortuga'];
 
 const CAT_META = {
-  'Pan de Molde':    { emoji: '🍞', cls: 'molde',   color: '#1976d2' },
-  'Pan de Viena':    { emoji: '🥖', cls: 'viena',   color: '#7b1fa2' },
-  'Pan de Tortuga':  { emoji: '🐢', cls: 'tortuga', color: '#e65100' },
+  'Pan de Molde':   { emoji: '🍞', cls: 'molde',   color: '#1976d2', label: 'PAN DE MOLDE' },
+  'Pan de Viena':   { emoji: '🥖', cls: 'viena',   color: '#7b1fa2', label: 'PAN DE VIENA' },
+  'Pan de Tortuga': { emoji: '🍔', cls: 'tortuga', color: '#e65100', label: 'PAN DE HAMBURGUESA' },
 };
 
 const SUPERS = ['Disco', 'TaTa', 'Tienda Inglesa', 'El Dorado'];
@@ -25,11 +25,22 @@ const SUPER_COLORS = {
   'El Dorado':      '#e65100',
 };
 
+const COMP_COLORS = {
+  'Magno':        '#f57c00',
+  'Bauducco':     '#c2185b',
+  'Visconti':     '#0288d1',
+  'Marbella':     '#388e3c',
+  'Precio Líder': '#5d4037',
+};
+
 const BADGE_IDS = {
   'Pan de Molde':   'badgeMolde',
   'Pan de Viena':   'badgeViena',
   'Pan de Tortuga': 'badgeTortuga',
 };
+
+const OWN_BRANDS  = ['Bimbo', 'Los Sorchantes'];
+const COMP_BRANDS = ['Magno', 'Bauducco', 'Visconti', 'Marbella', 'Precio Líder'];
 
 // ═══════════════════════════════════════════════════════════════════════
 // STATE
@@ -37,31 +48,25 @@ const BADGE_IDS = {
 
 const state = {
   raw: { generatedAt: null, items: [] },
-  // Active filter sets
-  activeCats:   new Set(CATEGORIES),
-  activeSupers: new Set(SUPERS),
-  showOwn:  true,
+  view: 'home',        // 'home' | 'category'
+  currentCat: null,    // 'Pan de Molde' | 'Pan de Viena' | 'Pan de Tortuga'
+  activeSupers: new Set(['Disco', 'TaTa', 'Tienda Inglesa', 'El Dorado']),
+  activeCats: new Set(['Pan de Molde', 'Pan de Viena', 'Pan de Tortuga']),
+  showOwn: true,
   showComp: true,
 };
 
-// Chart.js instances registry — destroyed before each re-render
+// Chart.js instances registry
 const charts = {};
 
 // ═══════════════════════════════════════════════════════════════════════
-// UTILITY FUNCTIONS
+// UTILITY
 // ═══════════════════════════════════════════════════════════════════════
 
-/** Format a price number as "$NNN" */
 const fmt = (n) => (n != null && !isNaN(n)) ? `$${Number(n).toFixed(0)}` : '—';
-
-/** Average of a numeric array, or null if empty */
 const avg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+const gapPct = (a, b) => (a != null && b != null && b !== 0) ? ((a - b) / b * 100) : null;
 
-/** Percent difference: (a - b) / b * 100 */
-const gapPct = (a, b) =>
-  (a != null && b != null && b !== 0) ? ((a - b) / b * 100) : null;
-
-/** Group array by a string key, returning a Map<key, item[]> */
 function groupBy(arr, key) {
   const m = new Map();
   for (const item of arr) {
@@ -72,7 +77,6 @@ function groupBy(arr, key) {
   return m;
 }
 
-/** Format an ISO date string as "DD/MM HH:MM" */
 function formatDate(iso) {
   if (!iso) return 'Sin datos';
   const d = new Date(iso);
@@ -80,32 +84,35 @@ function formatDate(iso) {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** Return items filtered by all active state filters */
-function filteredItems() {
+function filteredItems(catOverride) {
   return state.raw.items.filter((i) => {
-    if (!state.activeCats.has(i.category))   return false;
-    if (!state.activeSupers.has(i.super))    return false;
-    if (i.isOwn  && !state.showOwn)          return false;
-    if (!i.isOwn && !state.showComp)         return false;
+    const cat = catOverride || null;
+    if (cat && i.category !== cat) return false;
+    if (!cat && !state.activeCats.has(i.category)) return false;
+    if (!state.activeSupers.has(i.super)) return false;
+    if (i.isOwn  && !state.showOwn)  return false;
+    if (!i.isOwn && !state.showComp) return false;
     return true;
   });
 }
 
-/** Destroy a Chart.js instance by canvas id */
 function destroyChart(id) {
-  if (charts[id]) {
-    charts[id].destroy();
-    delete charts[id];
-  }
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
 }
 
-/** Destroy ALL tracked Chart.js instances */
 function destroyAllCharts() {
   Object.keys(charts).forEach(destroyChart);
 }
 
+function gapPill(gap, suffix = '') {
+  if (gap === null) return '<span class="gap-pill neutral">—</span>';
+  const sign = gap > 0 ? '+' : '';
+  const cls  = gap <= 0 ? 'positive' : 'negative';
+  return `<span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}%${suffix ? ' ' + suffix : ''}</span>`;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
-// TOAST NOTIFICATIONS
+// TOAST
 // ═══════════════════════════════════════════════════════════════════════
 
 function toast(msg, type = 'info', duration = 4500) {
@@ -122,33 +129,38 @@ function clearToasts() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// CATEGORY BADGE COUNTS
+// BADGES + HEADER
 // ═══════════════════════════════════════════════════════════════════════
 
 function updateCategoryBadges() {
-  const all = state.raw.items;
   for (const cat of CATEGORIES) {
     const el = document.getElementById(BADGE_IDS[cat]);
     if (!el) continue;
-    const count = all.filter((i) => i.category === cat).length;
+    const count = state.raw.items.filter((i) => i.category === cat).length;
     el.textContent = count > 0 ? `${count} productos` : '—';
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// HEADER TIMESTAMP
-// ═══════════════════════════════════════════════════════════════════════
-
 function updateLastUpdate() {
   const el = document.getElementById('lastUpdate');
-  if (!el) return;
-  el.textContent = state.raw.generatedAt
+  if (el) el.textContent = state.raw.generatedAt
     ? `Actualizado: ${formatDate(state.raw.generatedAt)}`
     : 'Sin datos';
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// HTML BUILDING BLOCKS
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════
+
+function setView(view, cat) {
+  destroyAllCharts();
+  state.view = view;
+  state.currentCat = cat || null;
+  render();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// EMPTY STATE
 // ═══════════════════════════════════════════════════════════════════════
 
 function buildEmptyState() {
@@ -167,91 +179,288 @@ function buildEmptyState() {
     </div>`;
 }
 
-/** Build the 5 KPI mini-cards for a given category's item set */
-function buildKpiRow(catItems, catColor) {
-  const ownItems  = catItems.filter((i) => i.isOwn);
-  const compItems = catItems.filter((i) => !i.isOwn);
+// ═══════════════════════════════════════════════════════════════════════
+// HOME VIEW
+// ═══════════════════════════════════════════════════════════════════════
+
+function buildHomeCard(cat) {
+  const meta     = CAT_META[cat];
+  const allItems = state.raw.items.filter((i) => i.category === cat);
+  const items    = allItems.filter((i) => state.activeSupers.has(i.super));
+
+  const ownItems  = items.filter((i) => i.isOwn);
+  const compItems = items.filter((i) => !i.isOwn);
 
   const ownPrices  = ownItems.map((i) => i.price).filter((p) => p != null);
   const compPrices = compItems.map((i) => i.price).filter((p) => p != null);
-  const allPrices  = catItems.map((i) => i.price).filter((p) => p != null);
 
-  const minPrice = allPrices.length ? Math.min(...allPrices) : null;
-  const avgOwn   = avg(ownPrices);
-  const avgComp  = avg(compPrices);
-  const gap      = gapPct(avgOwn, avgComp);
+  const avgOwn  = avg(ownPrices);
+  const avgComp = avg(compPrices);
+  const gap     = gapPct(avgOwn, avgComp);
 
-  let gapClass = '';
-  let gapLabel = '—';
+  let gapHtml = '<span class="gap-pill neutral">Sin datos</span>';
   if (gap !== null) {
     const sign = gap > 0 ? '+' : '';
-    gapLabel = `${sign}${gap.toFixed(1)}%`;
-    gapClass = gap <= 0 ? 'gap-green' : 'gap-red';
+    const cls  = gap <= 0 ? 'positive' : 'negative';
+    gapHtml = `<span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}% RGM vs comp.</span>`;
   }
 
-  const kpis = [
-    {
-      label: 'Total productos',
-      value: catItems.length,
-      sub: `${ownItems.length} RGM · ${compItems.length} comp.`,
-      color: catColor,
-    },
-    {
-      label: 'Precio mín',
-      value: fmt(minPrice),
-      sub: 'menor precio encontrado',
-      color: '#00897b',
-    },
-    {
-      label: 'Precio prom. RGM',
-      value: fmt(avgOwn),
-      sub: 'marcas propias',
-      color: '#1976d2',
-    },
-    {
-      label: 'Precio prom. competencia',
-      value: fmt(avgComp),
-      sub: 'marcas competidoras',
-      color: '#6a1b9a',
-    },
-    {
-      label: 'GAP RGM vs comp.',
-      value: gapLabel,
-      sub: gap !== null ? (gap <= 0 ? '✓ RGM más económico' : '⚠ Competencia más económica') : 'sin datos',
-      color: gap !== null ? (gap <= 0 ? '#388e3c' : '#c62828') : '#94a3b8',
-      extraClass: gapClass,
-    },
-  ];
+  // Mini bar: relative position (own vs comp)
+  let barHtml = '';
+  if (avgOwn != null && avgComp != null) {
+    const minP = Math.min(avgOwn, avgComp) * 0.95;
+    const maxP = Math.max(avgOwn, avgComp) * 1.05;
+    const range = maxP - minP;
+    const ownPct  = range > 0 ? ((avgOwn  - minP) / range * 100).toFixed(1) : 50;
+    const compPct = range > 0 ? ((avgComp - minP) / range * 100).toFixed(1) : 50;
+    barHtml = `
+      <div class="home-card-bar-wrap">
+        <div class="home-card-bar-label">
+          <span style="color:#1976d2">RGM ${fmt(avgOwn)}</span>
+          <span style="color:#9e9e9e">Comp. ${fmt(avgComp)}</span>
+        </div>
+        <div class="home-card-bar-track">
+          <div class="home-card-bar-marker rgm" style="left:${ownPct}%" title="RGM promedio"></div>
+          <div class="home-card-bar-marker comp" style="left:${compPct}%" title="Competencia promedio"></div>
+        </div>
+      </div>`;
+  }
 
-  const cards = kpis.map((k) => `
-    <div class="kpi-card ${k.extraClass || ''}" style="--kpi-color: ${k.color}">
-      <div class="kpi-label">${k.label}</div>
-      <div class="kpi-value">${k.value}</div>
-      <div class="kpi-sub">${k.sub}</div>
-    </div>
-  `).join('');
-
-  return `<div class="kpi-row">${cards}</div>`;
+  return `
+    <div class="home-card home-card-${meta.cls}" data-cat="${cat}">
+      <div class="home-card-header">
+        <span class="home-card-emoji">${meta.emoji}</span>
+        <div>
+          <div class="home-card-title">${cat}</div>
+          <div class="home-card-subtitle">${meta.label}</div>
+        </div>
+      </div>
+      <div class="home-card-stats">
+        <div class="home-card-stat">
+          <span class="home-card-stat-label">Nuestras</span>
+          <span class="home-card-stat-value own">${ownItems.length} prods.</span>
+        </div>
+        <div class="home-card-stat">
+          <span class="home-card-stat-label">Competencia</span>
+          <span class="home-card-stat-value comp">${compItems.length} prods.</span>
+        </div>
+        <div class="home-card-stat">
+          <span class="home-card-stat-label">Prom. RGM</span>
+          <span class="home-card-stat-value">${fmt(avgOwn)}</span>
+        </div>
+        <div class="home-card-stat">
+          <span class="home-card-stat-label">Prom. comp.</span>
+          <span class="home-card-stat-value">${fmt(avgComp)}</span>
+        </div>
+      </div>
+      <div class="home-card-gap">${gapHtml}</div>
+      ${barHtml}
+      <button class="home-card-cta" data-cat="${cat}">Ver análisis →</button>
+    </div>`;
 }
 
-/** Build horizontal bar chart "Precio promedio por marca" for a category */
-function buildBarChart(canvasId, catItems, catColor) {
+function buildGapSummaryTable() {
+  const rows = CATEGORIES.map((cat) => {
+    const items     = state.raw.items.filter((i) => i.category === cat && state.activeSupers.has(i.super));
+    const ownItems  = items.filter((i) => i.isOwn);
+    const compItems = items.filter((i) => !i.isOwn);
+
+    const ownPrices  = ownItems.map((i) => i.price).filter((p) => p != null);
+    const compPrices = compItems.map((i) => i.price).filter((p) => p != null);
+
+    const bestOwn  = ownPrices.length  ? Math.min(...ownPrices)  : null;
+    const bestComp = compPrices.length ? Math.min(...compPrices) : null;
+
+    // Cheapest competitor brand
+    const byBrand = groupBy(compItems, 'brand');
+    let cheapBrand = '—';
+    let cheapPrice = null;
+    for (const [brand, bitems] of byBrand) {
+      const prices = bitems.map((i) => i.price).filter((p) => p != null);
+      const m = avg(prices);
+      if (m != null && (cheapPrice === null || m < cheapPrice)) {
+        cheapPrice = m;
+        cheapBrand = brand;
+      }
+    }
+
+    const gap = gapPct(bestOwn, bestComp);
+    const meta = CAT_META[cat];
+
+    return `
+      <tr>
+        <td><span style="margin-right:6px">${meta.emoji}</span><strong>${cat}</strong></td>
+        <td>${cheapBrand !== '—' ? `<span class="brand-pill comp">${cheapBrand}</span>` : '—'}</td>
+        <td class="price-cell">${fmt(bestOwn)}</td>
+        <td class="price-cell">${fmt(cheapPrice)}</td>
+        <td>${gapPill(gap)}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="gap-summary-card">
+      <div class="gap-summary-header">📈 Resumen de gaps por categoría</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Categoría</th>
+              <th>Comp. más barata</th>
+              <th>Nuestro mejor precio</th>
+              <th>Precio comp. min.</th>
+              <th>GAP %</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderHome() {
+  const main = document.getElementById('appMain');
+
+  if (state.raw.items.length === 0) {
+    main.innerHTML = buildEmptyState();
+    document.getElementById('emptyRefreshBtn')?.addEventListener('click', doRefresh);
+    return;
+  }
+
+  const cardsHtml = CATEGORIES.map(buildHomeCard).join('');
+  const gapHtml   = buildGapSummaryTable();
+
+  main.innerHTML = `
+    <div class="home-grid">${cardsHtml}</div>
+    ${gapHtml}`;
+
+  // Wire CTA buttons
+  main.querySelectorAll('.home-card-cta, .home-card').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      const cat = el.dataset.cat;
+      if (cat) setView('category', cat);
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CATEGORY DETAIL VIEW
+// ═══════════════════════════════════════════════════════════════════════
+
+function buildBrandProductsTable(brandItems, cat) {
+  // Columns: Nombre | Disco | TaTa | Tienda Inglesa | El Dorado | ¿Oferta?
+  const activeSupers = SUPERS.filter((s) => state.activeSupers.has(s));
+
+  // Group by product name (or sku) then by super
+  const byName = groupBy(brandItems, 'name');
+
+  const rowsHtml = [...byName.entries()].map(([name, prods]) => {
+    const superCells = activeSupers.map((s) => {
+      const prod = prods.find((p) => p.super === s);
+      if (!prod) return `<td class="price-dash">—</td>`;
+      const hasOffer = prod.listPrice && prod.listPrice > prod.price;
+      let cell = `<span class="price-bold">${fmt(prod.price)}</span>`;
+      if (hasOffer) {
+        const disc = Math.round((1 - prod.price / prod.listPrice) * 100);
+        cell += ` <span class="offer-badge">🏷 -${disc}%</span>`;
+      }
+      return `<td>${cell}</td>`;
+    }).join('');
+
+    const hasAnyOffer = prods.some((p) => p.listPrice && p.listPrice > p.price);
+
+    return `
+      <tr>
+        <td class="product-name-cell">${name}</td>
+        ${superCells}
+        <td>${hasAnyOffer ? '<span class="offer-badge">Sí</span>' : '<span style="color:var(--text-light)">—</span>'}</td>
+      </tr>`;
+  }).join('');
+
+  const superHeaders = activeSupers.map((s) => `<th>${s}</th>`).join('');
+
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            ${superHeaders}
+            <th>¿Oferta?</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml || '<tr><td colspan="99" style="text-align:center;padding:20px;color:var(--text-muted)">Sin productos encontrados</td></tr>'}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function buildBrandSection(brand, items, isOwn) {
+  const cls = isOwn ? 'own' : 'comp';
+  return `
+    <div class="brand-section">
+      <div class="brand-section-header">
+        <span class="brand-pill ${cls}">${brand}</span>
+        <span class="brand-count">${items.length} producto${items.length !== 1 ? 's' : ''}</span>
+      </div>
+      ${buildBrandProductsTable(items, null)}
+    </div>`;
+}
+
+function buildSectionA(catItems) {
+  const ownItems = catItems.filter((i) => i.isOwn);
+  if (!ownItems.length) return '';
+
+  const byBrand = groupBy(ownItems, 'brand');
+  const sectionsHtml = [...byBrand.entries()]
+    .map(([brand, items]) => buildBrandSection(brand, items, true))
+    .join('');
+
+  return `
+    <div class="detail-section">
+      <div class="detail-section-title">
+        <span class="detail-section-icon">🏷</span>
+        Nuestras Marcas
+      </div>
+      ${sectionsHtml}
+    </div>`;
+}
+
+function buildSectionB(catItems) {
+  const compItems = catItems.filter((i) => !i.isOwn);
+  if (!compItems.length) return '';
+
+  const byBrand = groupBy(compItems, 'brand');
+  const sectionsHtml = [...byBrand.entries()]
+    .map(([brand, items]) => buildBrandSection(brand, items, false))
+    .join('');
+
+  return `
+    <div class="detail-section">
+      <div class="detail-section-title">
+        <span class="detail-section-icon">🔵</span>
+        Competencia
+      </div>
+      ${sectionsHtml}
+    </div>`;
+}
+
+function buildSectionC_chart(canvasId, catItems) {
   const byBrand = groupBy(catItems, 'brand');
   const entries = [...byBrand.entries()]
     .map(([brand, items]) => {
       const prices = items.map((i) => i.price).filter((p) => p != null);
-      return {
-        brand,
-        isOwn: items[0]?.isOwn ?? false,
-        avgPrice: avg(prices),
-      };
+      return { brand, isOwn: items[0]?.isOwn ?? false, avgPrice: avg(prices) };
     })
     .filter((e) => e.avgPrice != null)
     .sort((a, b) => a.avgPrice - b.avgPrice);
 
   const labels = entries.map((e) => e.brand);
   const data   = entries.map((e) => Math.round(e.avgPrice));
-  const colors = entries.map((e) => e.isOwn ? catColor : '#9e9e9e');
+  const colors = entries.map((e) => {
+    if (e.isOwn) return '#1976d2';
+    return COMP_COLORS[e.brand] || '#9e9e9e';
+  });
 
   const ctx = document.getElementById(canvasId)?.getContext('2d');
   if (!ctx) return;
@@ -274,11 +483,7 @@ function buildBarChart(canvasId, catItems, catColor) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` $${ctx.parsed.x}`,
-          },
-        },
+        tooltip: { callbacks: { label: (ctx) => ` $${ctx.parsed.x}` } },
       },
       scales: {
         x: {
@@ -295,319 +500,274 @@ function buildBarChart(canvasId, catItems, catColor) {
   });
 }
 
-/** Build donut chart "Presencia por supermercado" for a category */
-function buildDonutChart(canvasId, catItems) {
-  const bySuper = groupBy(catItems, 'super');
-  const labels  = [...bySuper.keys()];
-  const data    = labels.map((s) => bySuper.get(s).length);
-  const colors  = labels.map((s) => SUPER_COLORS[s] || '#bbb');
-
-  const ctx = document.getElementById(canvasId)?.getContext('2d');
-  if (!ctx) return;
-
-  charts[canvasId] = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels,
-      datasets: [{
-        data,
-        backgroundColor: colors,
-        borderWidth: 2,
-        borderColor: '#fff',
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'right',
-          labels: { font: { size: 11 }, padding: 14, usePointStyle: true },
-        },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` ${ctx.label}: ${ctx.parsed} productos`,
-          },
-        },
-      },
-    },
-  });
+function buildSectionC(cat, catItems, canvasId) {
+  const meta = CAT_META[cat];
+  return `
+    <div class="detail-section">
+      <div class="detail-section-title">
+        <span class="detail-section-icon">📊</span>
+        Comparación de Precios
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-title">Precio promedio por marca — ${cat}</div>
+        <div class="chart-wrap"><canvas id="${canvasId}"></canvas></div>
+      </div>
+    </div>`;
 }
 
-/** Build the price comparison table for one category */
-function buildPriceTable(catItems) {
-  // Gather brands → one row per brand
-  const byBrand = groupBy(catItems, 'brand');
+function buildSectionD(catItems) {
+  const ownItems  = catItems.filter((i) => i.isOwn);
+  const compItems = catItems.filter((i) => !i.isOwn);
 
-  // For each brand: avg price per super, overall avg
-  const rows = [...byBrand.entries()].map(([brand, items]) => {
-    const isOwn = items[0]?.isOwn ?? false;
-    const superPrices = {};
-    for (const s of SUPERS) {
-      const prices = items
-        .filter((i) => i.super === s && i.price != null)
-        .map((i) => i.price);
-      superPrices[s] = prices.length ? avg(prices) : null;
-    }
-    const validPrices = Object.values(superPrices).filter((p) => p != null);
-    const avgAll  = avg(validPrices);
+  // Unique brands found in data
+  const ownBrands  = [...new Set(ownItems.map((i) => i.brand))].filter((b) => OWN_BRANDS.includes(b));
+  const compBrands = [...new Set(compItems.map((i) => i.brand))].filter((b) => COMP_BRANDS.includes(b));
 
-    // URL: pick first available
-    const withUrl = items.find((i) => i.url);
-    return { brand, isOwn, superPrices, avgAll, url: withUrl?.url ?? null };
-  }).sort((a, b) => (a.avgAll ?? 9999) - (b.avgAll ?? 9999));
+  if (!ownBrands.length || !compBrands.length) return '';
 
-  // Cheapest competitor avg for GAP reference
-  const compRows  = rows.filter((r) => !r.isOwn && r.avgAll != null);
-  const leaderAvg = compRows.length ? Math.min(...compRows.map((r) => r.avgAll)) : null;
+  // Avg price per brand
+  const avgByBrand = (brand) => {
+    const prices = catItems.filter((i) => i.brand === brand).map((i) => i.price).filter((p) => p != null);
+    return avg(prices);
+  };
 
-  // Table rows HTML
-  const rowsHtml = rows.map((r) => {
-    const superCells = SUPERS.map((s) => {
-      const p = r.superPrices[s];
-      return p != null
-        ? `<td class="price-cell">${fmt(p)}</td>`
-        : `<td class="price-dash">—</td>`;
+  // Column headers: competitor brands + "vs. más barato"
+  const colHeaders = compBrands.map((b) => `<th>${b}</th>`).join('') + '<th>vs. más barato</th>';
+
+  const rowsHtml = ownBrands.map((ownBrand) => {
+    const ownAvg = avgByBrand(ownBrand);
+
+    const compCells = compBrands.map((compBrand) => {
+      const compAvg = avgByBrand(compBrand);
+      const gap = gapPct(ownAvg, compAvg);
+      if (gap === null) return '<td><span class="gap-pill neutral">—</span></td>';
+      const sign = gap > 0 ? '+' : '';
+      const cls  = gap <= 0 ? 'positive' : 'negative';
+      const diff = ownAvg != null && compAvg != null ? Math.abs(Math.round(ownAvg - compAvg)) : null;
+      const diffLabel = diff != null
+        ? (gap <= 0 ? ` ($${diff} más barato)` : ` ($${diff} más caro)`)
+        : '';
+      return `<td><span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}%</span><br><small style="color:var(--text-muted);font-size:.68rem">${diffLabel}</small></td>`;
     }).join('');
 
-    const promCell = r.avgAll != null
-      ? `<td class="price-cell">${fmt(r.avgAll)}</td>`
-      : `<td class="price-dash">—</td>`;
-
-    let gapCell = '<td>—</td>';
-    if (r.isOwn) {
-      // GAP vs cheapest competitor
-      const gap = gapPct(r.avgAll, leaderAvg);
-      if (gap !== null) {
-        const sign = gap > 0 ? '+' : '';
-        const cls  = gap <= 0 ? 'positive' : 'negative';
-        gapCell = `<td><span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}%</span></td>`;
-      }
-    } else {
-      gapCell = '<td><span class="gap-pill neutral">—</span></td>';
-    }
-
-    const brandPill = `<span class="brand-pill ${r.isOwn ? 'own' : 'comp'}">${r.brand}</span>`;
-    const ownBadge  = r.isOwn
-      ? '<span style="font-size:.7rem;font-weight:700;color:var(--own-text)">✓</span>'
-      : '<span style="color:var(--text-light)">—</span>';
-
-    const urlCell = r.url
-      ? `<td><a href="${r.url}" target="_blank" rel="noopener" class="link-icon" title="Ver en tienda">↗</a></td>`
-      : '<td></td>';
+    // vs cheapest competitor
+    const compAvgs = compBrands.map((b) => avgByBrand(b)).filter((p) => p != null);
+    const minComp  = compAvgs.length ? Math.min(...compAvgs) : null;
+    const gapMin   = gapPct(ownAvg, minComp);
+    const vsCell   = `<td>${gapPill(gapMin)}</td>`;
 
     return `
-      <tr class="${r.isOwn ? 'row-own' : ''}">
-        <td>${brandPill}</td>
-        <td style="text-align:center">${ownBadge}</td>
-        ${superCells}
-        ${promCell}
-        ${gapCell}
-        ${urlCell}
+      <tr>
+        <td><span class="brand-pill own">${ownBrand}</span></td>
+        ${compCells}
+        ${vsCell}
       </tr>`;
   }).join('');
 
-  const superHeaders = SUPERS.map((s) => `<th>${s}</th>`).join('');
-
   return `
-    <div class="table-card">
-      <div class="table-card-header">📋 Comparación de precios por marca y supermercado</div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Marca</th>
-              <th>¿Nuestra?</th>
-              ${superHeaders}
-              <th>Prom.</th>
-              <th>GAP vs líder %</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml || '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">Sin datos para los filtros seleccionados</td></tr>'}
-          </tbody>
-        </table>
+    <div class="detail-section">
+      <div class="detail-section-title">
+        <span class="detail-section-icon">📐</span>
+        GAP de Precios
+      </div>
+      <div class="table-card">
+        <div class="table-card-header">GAP RGM vs. Competencia (precio promedio)</div>
+        <div class="table-wrap">
+          <table class="gap-table">
+            <thead>
+              <tr>
+                <th>Marca RGM</th>
+                ${colHeaders}
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
       </div>
     </div>`;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// RENDER — ONE CATEGORY SECTION
-// ═══════════════════════════════════════════════════════════════════════
+function buildSectionE(catItems) {
+  const offers = catItems.filter((i) => i.listPrice && i.listPrice > i.price);
+  if (!offers.length) return '';
 
-function buildCategorySection(cat, catItems) {
-  const meta    = CAT_META[cat];
-  const count   = catItems.length;
-  const allPrices = catItems.map((i) => i.price).filter((p) => p != null);
-  const avgAll  = avg(allPrices);
+  const sorted = [...offers].sort((a, b) => {
+    const discA = (1 - a.price / a.listPrice);
+    const discB = (1 - b.price / b.listPrice);
+    return discB - discA;
+  });
 
-  const barCanvasId   = `chart-bar-${meta.cls}`;
-  const donutCanvasId = `chart-donut-${meta.cls}`;
+  const rowsHtml = sorted.map((p) => {
+    const disc    = Math.round((1 - p.price / p.listPrice) * 100);
+    const savings = Math.round(p.listPrice - p.price);
+    const cls     = p.isOwn ? 'own' : 'comp';
+    return `
+      <tr>
+        <td><span class="brand-pill ${cls}">${p.brand}</span></td>
+        <td class="product-name-cell">${p.name}</td>
+        <td>${p.super}</td>
+        <td class="price-cell"><s style="color:var(--text-light)">${fmt(p.listPrice)}</s></td>
+        <td class="price-cell" style="color:var(--green)">${fmt(p.price)}</td>
+        <td class="price-cell">$${savings}</td>
+        <td><span class="offer-badge">-${disc}%</span></td>
+      </tr>`;
+  }).join('');
 
   return `
-    <section class="cat-section" id="section-${meta.cls}">
-
-      <!-- Section header -->
-      <div class="cat-section-header ${meta.cls}">
-        <div class="cat-section-emoji">${meta.emoji}</div>
-        <div class="cat-section-info">
-          <div class="cat-section-name">${cat}</div>
-          <div class="cat-section-meta">${count} productos monitoreados en esta categoría</div>
-        </div>
-        <div class="cat-avg-badge">
-          <span class="cat-avg-badge-label">Precio prom.</span>
-          <span class="cat-avg-badge-value">${fmt(avgAll)}</span>
+    <div class="detail-section">
+      <div class="detail-section-title">
+        <span class="detail-section-icon">🏷</span>
+        Ofertas activas <span class="offer-count-badge">${offers.length}</span>
+      </div>
+      <div class="table-card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Marca</th>
+                <th>Producto</th>
+                <th>Super</th>
+                <th>Precio normal</th>
+                <th>Precio oferta</th>
+                <th>Ahorro $</th>
+                <th>% desc.</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
         </div>
       </div>
-
-      <!-- KPI row -->
-      ${buildKpiRow(catItems, meta.color)}
-
-      <!-- Charts row -->
-      <div class="charts-row">
-        <div class="chart-card">
-          <div class="chart-card-title">
-            <div class="chart-icon" style="background:color-mix(in srgb,${meta.color} 15%,white)">📊</div>
-            Precio promedio por marca
-          </div>
-          <div class="chart-wrap"><canvas id="${barCanvasId}"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-card-title">
-            <div class="chart-icon" style="background:#e8f5e9">🏪</div>
-            Presencia por supermercado
-          </div>
-          <div class="chart-wrap"><canvas id="${donutCanvasId}"></canvas></div>
-        </div>
-      </div>
-
-      <!-- Price comparison table -->
-      ${buildPriceTable(catItems)}
-
-    </section>`;
+    </div>`;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// RENDER — GAP ANALYSIS CARD (final summary)
-// ═══════════════════════════════════════════════════════════════════════
+function buildSuperBreakdown(cat, catItems) {
+  const activeSupers = SUPERS.filter((s) => state.activeSupers.has(s));
+  const blocksHtml = activeSupers.map((s) => {
+    const superItems = catItems.filter((i) => i.super === s);
+    if (!superItems.length) return '';
 
-function buildGapAnalysisCard(allFilteredItems) {
-  const rows = CATEGORIES
-    .filter((cat) => state.activeCats.has(cat))
-    .map((cat) => {
-      const catItems   = allFilteredItems.filter((i) => i.category === cat);
-      const ownItems   = catItems.filter((i) => i.isOwn);
-      const compItems  = catItems.filter((i) => !i.isOwn);
-
-      const ownPrices  = ownItems.map((i) => i.price).filter((p) => p != null);
-      const compPrices = compItems.map((i) => i.price).filter((p) => p != null);
-
-      const bestOwn  = ownPrices.length  ? Math.min(...ownPrices)  : null;
-      const bestComp = compPrices.length ? Math.min(...compPrices) : null;
-
-      // Cheapest competitor brand
-      const byBrand = groupBy(compItems, 'brand');
-      let cheapestCompBrand = '—';
-      let cheapestCompPrice = null;
-      for (const [brand, items] of byBrand) {
-        const prices = items.map((i) => i.price).filter((p) => p != null);
-        const m = avg(prices);
-        if (m != null && (cheapestCompPrice === null || m < cheapestCompPrice)) {
-          cheapestCompPrice = m;
-          cheapestCompBrand = brand;
-        }
-      }
-
-      const gap = gapPct(bestOwn, bestComp);
-      const meta = CAT_META[cat];
-
-      let interpHtml = '<span style="color:var(--text-light)">Sin datos</span>';
-      if (gap !== null) {
-        if (gap <= 0) {
-          interpHtml = `<span class="interp-better">✓ Somos más baratos (${gap.toFixed(1)}%)</span>`;
-        } else {
-          interpHtml = `<span class="interp-worse">⚠ Competencia más barata por ${gap.toFixed(1)}%</span>`;
-        }
-      }
-
+    const rowsHtml = superItems.map((p) => {
+      const cls = p.isOwn ? 'own' : 'comp';
+      const hasOffer = p.listPrice && p.listPrice > p.price;
+      const disc = hasOffer ? Math.round((1 - p.price / p.listPrice) * 100) : null;
       return `
         <tr>
-          <td>
-            <span style="font-size:1.1rem;margin-right:6px">${meta.emoji}</span>
-            <strong>${cat}</strong>
-          </td>
-          <td>${cheapestCompBrand !== '—' ? `<span class="brand-pill comp">${cheapestCompBrand}</span>` : '—'}</td>
-          <td class="price-cell">${fmt(cheapestCompPrice)}</td>
-          <td class="price-cell">${fmt(bestOwn)}</td>
-          <td>${gap !== null ? `<span class="gap-pill ${gap <= 0 ? 'positive' : 'negative'}">${gap > 0 ? '+' : ''}${gap.toFixed(1)}%</span>` : '—'}</td>
-          <td>${interpHtml}</td>
+          <td><span class="brand-pill ${cls}">${p.brand}</span></td>
+          <td class="product-name-cell">${p.name}</td>
+          <td class="price-cell">${fmt(p.price)}</td>
+          <td class="price-cell">${hasOffer ? `<s style="color:var(--text-light)">${fmt(p.listPrice)}</s>` : '—'}</td>
+          <td>${hasOffer ? `<span class="offer-badge">-${disc}%</span>` : '—'}</td>
         </tr>`;
     }).join('');
 
+    return `
+      <div class="super-block">
+        <div class="super-block-title" style="border-color:${SUPER_COLORS[s] || '#999'}">${s} <span class="super-block-count">${superItems.length} prods.</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Marca</th><th>Producto</th><th>Precio</th><th>Precio lista</th><th>Oferta</th></tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+
+  if (!blocksHtml) return '';
+
   return `
-    <div class="gap-analysis-card">
-      <div class="gap-analysis-header">
-        <h2>📈 Análisis de Gaps por Categoría</h2>
-        <p>Comparación del mejor precio RGM vs. el competidor más barato en cada categoría</p>
+    <div class="detail-section">
+      <div class="detail-section-title">
+        <span class="detail-section-icon">🏪</span>
+        Desglose por supermercado
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Categoría</th>
-              <th>Marca más barata (comp.)</th>
-              <th>Su precio mín.</th>
-              <th>Nuestro mejor precio</th>
-              <th>GAP %</th>
-              <th>Interpretación</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+      <div class="super-breakdown">${blocksHtml}</div>
     </div>`;
 }
 
+function renderCategory(cat) {
+  const main = document.getElementById('appMain');
+  const meta = CAT_META[cat];
+
+  // Items for this category, respecting super + brand filters
+  const catItems = state.raw.items
+    .filter((i) => i.category === cat && state.activeSupers.has(i.super))
+    .filter((i) => {
+      if (i.isOwn  && !state.showOwn)  return false;
+      if (!i.isOwn && !state.showComp) return false;
+      return true;
+    });
+
+  const canvasId = `chart-detail-${meta.cls}`;
+
+  // Super chips (inline in detail)
+  const superChipsHtml = SUPERS.map((s) => {
+    const active = state.activeSupers.has(s) ? 'active' : '';
+    const clsKey = s === 'Disco' ? 'disco' : s === 'TaTa' ? 'tata' : s === 'Tienda Inglesa' ? 'ti' : 'ed';
+    return `<button class="chip chip-${clsKey} ${active}" data-super="${s}">${s}</button>`;
+  }).join('');
+
+  main.innerHTML = `
+    <div class="detail-back">
+      <button class="btn-back" id="btnBack">← Volver</button>
+    </div>
+    <div class="detail-header detail-header-${meta.cls}">
+      <div class="detail-header-emoji">${meta.emoji}</div>
+      <div class="detail-header-info">
+        <div class="detail-header-title">${cat}</div>
+        <div class="detail-header-sub">${catItems.length} productos monitoreados</div>
+      </div>
+    </div>
+    <div class="detail-filter-row">
+      <span class="filter-label">Supermercados:</span>
+      <div class="chip-row" id="detailChipSupers">${superChipsHtml}</div>
+    </div>
+    ${buildSectionA(catItems)}
+    ${buildSectionB(catItems)}
+    ${buildSectionC(cat, catItems, canvasId)}
+    ${buildSectionD(catItems)}
+    ${buildSectionE(catItems)}
+    ${buildSuperBreakdown(cat, catItems)}
+  `;
+
+  // Wire back button
+  document.getElementById('btnBack')?.addEventListener('click', () => setView('home'));
+
+  // Wire detail super chips
+  document.querySelectorAll('#detailChipSupers .chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const s = chip.dataset.super;
+      if (state.activeSupers.has(s)) {
+        state.activeSupers.delete(s);
+        chip.classList.remove('active');
+        // also sync main filter bar
+        document.querySelector(`#chipSupers .chip[data-super="${s}"]`)?.classList.remove('active');
+      } else {
+        state.activeSupers.add(s);
+        chip.classList.add('active');
+        document.querySelector(`#chipSupers .chip[data-super="${s}"]`)?.classList.add('active');
+      }
+      destroyAllCharts();
+      renderCategory(cat);
+    });
+  });
+
+  // Render chart after DOM
+  requestAnimationFrame(() => {
+    buildSectionC_chart(canvasId, catItems);
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════
-// MAIN RENDER FUNCTION
+// MAIN RENDER
 // ═══════════════════════════════════════════════════════════════════════
 
 function render() {
-  destroyAllCharts();
-
-  const main = document.getElementById('appMain');
-  const items = filteredItems();
-
-  // Empty state
-  if (state.raw.items.length === 0) {
-    main.innerHTML = buildEmptyState();
-    document.getElementById('emptyRefreshBtn')?.addEventListener('click', doRefresh);
-    return;
-  }
-
-  // Build sections for each active category
-  const sectionsHtml = CATEGORIES
-    .filter((cat) => state.activeCats.has(cat))
-    .map((cat) => {
-      const catItems = items.filter((i) => i.category === cat);
-      if (!catItems.length) return '';
-      return buildCategorySection(cat, catItems);
-    })
-    .join('');
-
-  const gapHtml = items.length > 0 ? buildGapAnalysisCard(items) : '';
-
-  main.innerHTML = sectionsHtml + gapHtml;
-
-  // Instantiate charts after DOM is ready
-  for (const cat of CATEGORIES) {
-    if (!state.activeCats.has(cat)) continue;
-    const meta     = CAT_META[cat];
-    const catItems = items.filter((i) => i.category === cat);
-    if (!catItems.length) continue;
-    buildBarChart(`chart-bar-${meta.cls}`, catItems, meta.color);
-    buildDonutChart(`chart-donut-${meta.cls}`, catItems);
+  if (state.view === 'home') {
+    renderHome();
+  } else if (state.view === 'category' && state.currentCat) {
+    renderCategory(state.currentCat);
   }
 }
 
@@ -616,7 +776,7 @@ function render() {
 // ═══════════════════════════════════════════════════════════════════════
 
 function initFilters() {
-  // Category pills
+  // Category pills (header bar)
   document.querySelectorAll('.cat-pill').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cat = btn.dataset.cat;
@@ -627,11 +787,11 @@ function initFilters() {
         state.activeCats.add(cat);
         btn.classList.add('active');
       }
-      render();
+      if (state.view === 'home') render();
     });
   });
 
-  // Super chips
+  // Super chips (main filter bar)
   document.querySelectorAll('#chipSupers .chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const s = chip.dataset.super;
@@ -642,6 +802,7 @@ function initFilters() {
         state.activeSupers.add(s);
         chip.classList.add('active');
       }
+      destroyAllCharts();
       render();
     });
   });
@@ -657,13 +818,14 @@ function initFilters() {
         state.showComp = !state.showComp;
         chip.classList.toggle('active', state.showComp);
       }
+      destroyAllCharts();
       render();
     });
   });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// REFRESH BUTTON
+// REFRESH
 // ═══════════════════════════════════════════════════════════════════════
 
 async function doRefresh() {
@@ -700,13 +862,13 @@ async function doRefresh() {
     if (failed.length > 0) {
       toast(
         `✓ ${count} productos de ${ok}/${results.length} supermercados. Fallaron: ${failed.map((f) => f.name).join(', ')}`,
-        'info',
-        8000
+        'info', 8000
       );
     } else {
       toast(`✓ ${count} productos actualizados (${results.length} supermercados)`, 'success');
     }
 
+    destroyAllCharts();
     render();
   } catch (e) {
     clearToasts();
@@ -728,7 +890,6 @@ async function doRefresh() {
 // ═══════════════════════════════════════════════════════════════════════
 
 async function loadData() {
-  // Show loading spinner
   const main = document.getElementById('appMain');
   main.innerHTML = `
     <div class="loading-state">
