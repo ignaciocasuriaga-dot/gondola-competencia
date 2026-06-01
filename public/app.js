@@ -344,144 +344,98 @@ function renderHome() {
 // CATEGORY DETAIL VIEW
 // ═══════════════════════════════════════════════════════════════════════
 
-function buildBrandProductsTable(brandItems, cat) {
-  // Columns: Nombre | Disco | TaTa | Tienda Inglesa | El Dorado | ¿Oferta?
-  const activeSupers = SUPERS.filter((s) => state.activeSupers.has(s));
+// ── helpers ────────────────────────────────────────────────────────────
 
-  // Group by product name (or sku) then by super
-  const byName = groupBy(brandItems, 'name');
-
-  const rowsHtml = [...byName.entries()].map(([name, prods]) => {
-    const superCells = activeSupers.map((s) => {
-      const prod = prods.find((p) => p.super === s);
-      if (!prod) return `<td class="price-dash">—</td>`;
-      const hasOffer = prod.listPrice && prod.listPrice > prod.price;
-      let cell = `<span class="price-bold">${fmt(prod.price)}</span>`;
-      if (hasOffer) {
-        const disc = Math.round((1 - prod.price / prod.listPrice) * 100);
-        cell += ` <span class="offer-badge">🏷 -${disc}%</span>`;
-      }
-      return `<td>${cell}</td>`;
-    }).join('');
-
-    const hasAnyOffer = prods.some((p) => p.listPrice && p.listPrice > p.price);
-
-    return `
-      <tr>
-        <td class="product-name-cell">${name}</td>
-        ${superCells}
-        <td>${hasAnyOffer ? '<span class="offer-badge">Sí</span>' : '<span style="color:var(--text-light)">—</span>'}</td>
-      </tr>`;
-  }).join('');
-
-  const superHeaders = activeSupers.map((s) => `<th>${s}</th>`).join('');
-
-  return `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            ${superHeaders}
-            <th>¿Oferta?</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml || '<tr><td colspan="99" style="text-align:center;padding:20px;color:var(--text-muted)">Sin productos encontrados</td></tr>'}
-        </tbody>
-      </table>
-    </div>`;
+function brandStatsFor(brand, items) {
+  const brandItems = items.filter((i) => i.brand === brand);
+  const prices     = brandItems.map((i) => i.price).filter((p) => p != null);
+  const offers     = brandItems.filter((i) => i.listPrice && i.listPrice > i.price);
+  const discounts  = offers.map((i) => (1 - i.price / i.listPrice) * 100);
+  return {
+    total:    brandItems.length,
+    avgPrice: avg(prices),
+    minPrice: prices.length ? Math.min(...prices) : null,
+    maxPrice: prices.length ? Math.max(...prices) : null,
+    offerCount:  offers.length,
+    offerRate:   brandItems.length ? Math.round(offers.length / brandItems.length * 100) : 0,
+    avgDiscount: avg(discounts),
+    cheapestSku: [...brandItems].sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity))[0] ?? null,
+  };
 }
 
-function buildBrandSection(brand, items, isOwn) {
-  const cls = isOwn ? 'own' : 'comp';
-  return `
-    <div class="brand-section">
-      <div class="brand-section-header">
-        <span class="brand-pill ${cls}">${brand}</span>
-        <span class="brand-count">${items.length} producto${items.length !== 1 ? 's' : ''}</span>
-      </div>
-      ${buildBrandProductsTable(items, null)}
-    </div>`;
-}
+// ── A. Posicionamiento de precios (chart + tabla) ─────────────────────
 
-function buildSectionA(catItems) {
-  const ownItems = catItems.filter((i) => i.isOwn);
-  if (!ownItems.length) return '';
-
-  const byBrand = groupBy(ownItems, 'brand');
-  const sectionsHtml = [...byBrand.entries()]
-    .map(([brand, items]) => buildBrandSection(brand, items, true))
-    .join('');
-
-  return `
-    <div class="detail-section">
-      <div class="detail-section-title">
-        <span class="detail-section-icon">🏷</span>
-        Nuestras Marcas
-      </div>
-      ${sectionsHtml}
-    </div>`;
-}
-
-function buildSectionB(catItems) {
-  const compItems = catItems.filter((i) => !i.isOwn);
-  if (!compItems.length) return '';
-
-  const byBrand = groupBy(compItems, 'brand');
-  const sectionsHtml = [...byBrand.entries()]
-    .map(([brand, items]) => buildBrandSection(brand, items, false))
-    .join('');
-
-  return `
-    <div class="detail-section">
-      <div class="detail-section-title">
-        <span class="detail-section-icon">🔵</span>
-        Competencia
-      </div>
-      ${sectionsHtml}
-    </div>`;
-}
-
-function buildSectionC_chart(canvasId, catItems) {
-  const byBrand = groupBy(catItems, 'brand');
-  const entries = [...byBrand.entries()]
-    .map(([brand, items]) => {
-      const prices = items.map((i) => i.price).filter((p) => p != null);
-      return { brand, isOwn: items[0]?.isOwn ?? false, avgPrice: avg(prices) };
+function buildChartPricePositioning(canvasId, catItems) {
+  const allBrands = [...OWN_BRANDS, ...COMP_BRANDS];
+  const entries = allBrands
+    .map((brand) => {
+      const stats = brandStatsFor(brand, catItems);
+      if (!stats.total || stats.avgPrice == null) return null;
+      const isOwn = OWN_BRANDS.includes(brand);
+      return { brand, isOwn, ...stats };
     })
-    .filter((e) => e.avgPrice != null)
+    .filter(Boolean)
     .sort((a, b) => a.avgPrice - b.avgPrice);
 
-  const labels = entries.map((e) => e.brand);
-  const data   = entries.map((e) => Math.round(e.avgPrice));
-  const colors = entries.map((e) => {
-    if (e.isOwn) return '#1976d2';
-    return COMP_COLORS[e.brand] || '#9e9e9e';
-  });
+  if (!entries.length) return;
 
   const ctx = document.getElementById(canvasId)?.getContext('2d');
   if (!ctx) return;
+
+  const labels = entries.map((e) => e.brand);
+  const avgData = entries.map((e) => Math.round(e.avgPrice));
+  const minData = entries.map((e) => Math.round(e.minPrice ?? e.avgPrice));
+  const maxData = entries.map((e) => Math.round(e.maxPrice ?? e.avgPrice));
+
+  // Floating bars for range (min→max), then avg as overlay
+  const rangeData = entries.map((e) => [Math.round(e.minPrice ?? e.avgPrice), Math.round(e.maxPrice ?? e.avgPrice)]);
+  const rangeColors = entries.map((e) => {
+    const base = e.isOwn ? '#1976d2' : (COMP_COLORS[e.brand] || '#9e9e9e');
+    return base + '40'; // transparent fill for range
+  });
+  const avgColors = entries.map((e) => e.isOwn ? '#1976d2' : (COMP_COLORS[e.brand] || '#9e9e9e'));
 
   charts[canvasId] = new Chart(ctx, {
     type: 'bar',
     data: {
       labels,
-      datasets: [{
-        label: 'Precio promedio ($)',
-        data,
-        backgroundColor: colors,
-        borderRadius: 5,
-        borderSkipped: false,
-      }],
+      datasets: [
+        {
+          label: 'Rango de precios (min–max)',
+          data: rangeData,
+          backgroundColor: rangeColors,
+          borderColor: avgColors.map((c) => c + '80'),
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false,
+        },
+        {
+          label: 'Precio promedio',
+          data: avgData,
+          backgroundColor: avgColors,
+          borderRadius: 4,
+          borderSkipped: false,
+          barPercentage: 0.35,
+        },
+      ],
     },
     options: {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => ` $${ctx.parsed.x}` } },
+        legend: { display: true, position: 'top', labels: { font: { size: 11 }, boxWidth: 14 } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              if (ctx.datasetIndex === 0) {
+                const [mn, mx] = ctx.raw;
+                return ` Rango: $${mn} – $${mx}`;
+              }
+              return ` Promedio: $${ctx.parsed.x}`;
+            },
+          },
+        },
       },
       scales: {
         x: {
@@ -489,95 +443,104 @@ function buildSectionC_chart(canvasId, catItems) {
           ticks: { callback: (v) => '$' + v, font: { size: 11 } },
           grid: { color: '#f0f0f0' },
         },
-        y: {
-          ticks: { font: { size: 11 } },
-          grid: { display: false },
-        },
+        y: { ticks: { font: { size: 11 } }, grid: { display: false } },
       },
     },
   });
 }
 
-function buildSectionC(cat, catItems, canvasId) {
-  const meta = CAT_META[cat];
+function buildSectionPriceChart(cat, catItems, canvasId) {
+  const allBrands = [...OWN_BRANDS, ...COMP_BRANDS];
+  const rows = allBrands.map((brand) => {
+    const stats = brandStatsFor(brand, catItems);
+    if (!stats.total) return null;
+    const isOwn = OWN_BRANDS.includes(brand);
+    const cls   = isOwn ? 'own' : 'comp';
+    const rankLabel = stats.avgPrice != null
+      ? `<span class="price-bold">${fmt(stats.avgPrice)}</span> <small style="color:var(--text-muted)">(${fmt(stats.minPrice)}–${fmt(stats.maxPrice)})</small>`
+      : '—';
+    return `
+      <tr>
+        <td><span class="brand-pill ${cls}">${brand}</span></td>
+        <td>${stats.total} SKU${stats.total > 1 ? 's' : ''}</td>
+        <td>${rankLabel}</td>
+        <td class="price-cell">${fmt(stats.minPrice)}</td>
+        <td class="price-cell">${fmt(stats.maxPrice)}</td>
+        <td>${stats.offerCount > 0 ? `<span class="offer-badge">${stats.offerCount} oferta${stats.offerCount > 1 ? 's' : ''}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+      </tr>`;
+  }).filter(Boolean).join('');
+
+  if (!rows) return '';
+
   return `
     <div class="detail-section">
       <div class="detail-section-title">
         <span class="detail-section-icon">📊</span>
-        Comparación de Precios
+        Posicionamiento de Precios — ${cat}
       </div>
       <div class="chart-card">
-        <div class="chart-card-title">Precio promedio por marca — ${cat}</div>
-        <div class="chart-wrap"><canvas id="${canvasId}"></canvas></div>
+        <div class="chart-card-title">Precio por marca (barra = promedio · franja = rango min/max)</div>
+        <div class="chart-wrap" style="height:${Math.max(220, ([...OWN_BRANDS, ...COMP_BRANDS].filter((b) => brandStatsFor(b, catItems).total > 0).length) * 46)}px">
+          <canvas id="${canvasId}"></canvas>
+        </div>
+      </div>
+      <div class="table-card" style="margin-top:12px">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Marca</th><th>SKUs</th><th>Precio promedio (rango)</th><th>Mínimo</th><th>Máximo</th><th>Ofertas</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
       </div>
     </div>`;
 }
 
-function buildSectionD(catItems) {
-  const ownItems  = catItems.filter((i) => i.isOwn);
-  const compItems = catItems.filter((i) => !i.isOwn);
+// ── B. Matriz SKUs por supermercado × marca ───────────────────────────
 
-  // Unique brands found in data
-  const ownBrands  = [...new Set(ownItems.map((i) => i.brand))].filter((b) => OWN_BRANDS.includes(b));
-  const compBrands = [...new Set(compItems.map((i) => i.brand))].filter((b) => COMP_BRANDS.includes(b));
+function buildSectionSkuMatrix(catItems) {
+  const activeSupers = SUPERS.filter((s) => state.activeSupers.has(s));
+  const allBrands    = [...OWN_BRANDS, ...COMP_BRANDS].filter((b) =>
+    catItems.some((i) => i.brand === b)
+  );
+  if (!allBrands.length) return '';
 
-  if (!ownBrands.length || !compBrands.length) return '';
+  const headerCols = allBrands.map((b) => {
+    const isOwn = OWN_BRANDS.includes(b);
+    return `<th><span class="brand-pill ${isOwn ? 'own' : 'comp'}" style="font-size:.7rem">${b}</span></th>`;
+  }).join('');
 
-  // Avg price per brand
-  const avgByBrand = (brand) => {
-    const prices = catItems.filter((i) => i.brand === brand).map((i) => i.price).filter((p) => p != null);
-    return avg(prices);
-  };
-
-  // Column headers: competitor brands + "vs. más barato"
-  const colHeaders = compBrands.map((b) => `<th>${b}</th>`).join('') + '<th>vs. más barato</th>';
-
-  const rowsHtml = ownBrands.map((ownBrand) => {
-    const ownAvg = avgByBrand(ownBrand);
-
-    const compCells = compBrands.map((compBrand) => {
-      const compAvg = avgByBrand(compBrand);
-      const gap = gapPct(ownAvg, compAvg);
-      if (gap === null) return '<td><span class="gap-pill neutral">—</span></td>';
-      const sign = gap > 0 ? '+' : '';
-      const cls  = gap <= 0 ? 'positive' : 'negative';
-      const diff = ownAvg != null && compAvg != null ? Math.abs(Math.round(ownAvg - compAvg)) : null;
-      const diffLabel = diff != null
-        ? (gap <= 0 ? ` ($${diff} más barato)` : ` ($${diff} más caro)`)
-        : '';
-      return `<td><span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}%</span><br><small style="color:var(--text-muted);font-size:.68rem">${diffLabel}</small></td>`;
+  const rowsHtml = activeSupers.map((s) => {
+    const superItems = catItems.filter((i) => i.super === s);
+    const cells = allBrands.map((brand) => {
+      const brandProds = superItems.filter((i) => i.brand === brand);
+      if (!brandProds.length) return `<td class="price-dash">—</td>`;
+      const names = brandProds.map((p) => {
+        const hasOffer = p.listPrice && p.listPrice > p.price;
+        return `<li>${p.name} <strong>${fmt(p.price)}</strong>${hasOffer ? ` <span class="offer-badge">-${Math.round((1 - p.price / p.listPrice) * 100)}%</span>` : ''}</li>`;
+      }).join('');
+      return `<td>
+        <details>
+          <summary style="cursor:pointer;font-weight:600;color:var(--blue)">${brandProds.length} SKU${brandProds.length > 1 ? 's' : ''}</summary>
+          <ul class="sku-list">${names}</ul>
+        </details>
+      </td>`;
     }).join('');
-
-    // vs cheapest competitor
-    const compAvgs = compBrands.map((b) => avgByBrand(b)).filter((p) => p != null);
-    const minComp  = compAvgs.length ? Math.min(...compAvgs) : null;
-    const gapMin   = gapPct(ownAvg, minComp);
-    const vsCell   = `<td>${gapPill(gapMin)}</td>`;
-
-    return `
-      <tr>
-        <td><span class="brand-pill own">${ownBrand}</span></td>
-        ${compCells}
-        ${vsCell}
-      </tr>`;
+    return `<tr><td style="font-weight:600;white-space:nowrap">${s}</td>${cells}</tr>`;
   }).join('');
 
   return `
     <div class="detail-section">
       <div class="detail-section-title">
-        <span class="detail-section-icon">📐</span>
-        GAP de Precios
+        <span class="detail-section-icon">🏪</span>
+        Cobertura de SKUs por Supermercado y Marca
       </div>
       <div class="table-card">
-        <div class="table-card-header">GAP Bimbo / Los Sorchantes vs. Competencia (precio promedio)</div>
+        <div class="table-card-header">Expandí cada celda para ver los productos y precios</div>
         <div class="table-wrap">
-          <table class="gap-table">
-            <thead>
-              <tr>
-                <th>Nuestra marca</th>
-                ${colHeaders}
-              </tr>
-            </thead>
+          <table class="sku-matrix">
+            <thead><tr><th>Super</th>${headerCols}</tr></thead>
             <tbody>${rowsHtml}</tbody>
           </table>
         </div>
@@ -585,15 +548,131 @@ function buildSectionD(catItems) {
     </div>`;
 }
 
-function buildSectionE(catItems) {
+// ── C. Análisis de ofertas por marca ─────────────────────────────────
+
+function buildSectionOfferAnalysis(catItems) {
+  const allBrands = [...OWN_BRANDS, ...COMP_BRANDS].filter((b) =>
+    catItems.some((i) => i.brand === b)
+  );
+
+  const rows = allBrands.map((brand) => {
+    const stats = brandStatsFor(brand, catItems);
+    if (!stats.total) return null;
+    const isOwn = OWN_BRANDS.includes(brand);
+    const cls   = isOwn ? 'own' : 'comp';
+    const rateBar = `<div class="offer-rate-bar"><div class="offer-rate-fill" style="width:${stats.offerRate}%;background:${isOwn ? '#1976d2' : '#e65100'}"></div></div>`;
+    return `
+      <tr>
+        <td><span class="brand-pill ${cls}">${brand}</span></td>
+        <td style="text-align:center">${stats.total}</td>
+        <td style="text-align:center">${stats.offerCount || '—'}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px">
+            ${rateBar}
+            <span style="font-size:.8rem;font-weight:600">${stats.offerRate}%</span>
+          </div>
+        </td>
+        <td style="text-align:center">${stats.avgDiscount != null ? `${stats.avgDiscount.toFixed(1)}%` : '—'}</td>
+        <td class="price-cell">${fmt(stats.minPrice)}</td>
+        <td class="product-name-cell" style="font-size:.78rem;color:var(--text-muted)">${stats.cheapestSku?.name ?? '—'}</td>
+      </tr>`;
+  }).filter(Boolean).join('');
+
+  if (!rows) return '';
+
+  return `
+    <div class="detail-section">
+      <div class="detail-section-title">
+        <span class="detail-section-icon">🏷</span>
+        Análisis de Ofertas por Marca
+      </div>
+      <div class="table-card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Marca</th>
+                <th>Total SKUs</th>
+                <th>En oferta</th>
+                <th>% en oferta</th>
+                <th>Desc. promedio</th>
+                <th>Precio mín.</th>
+                <th>SKU más barato</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── D. GAP table (our brands vs each competitor) ──────────────────────
+
+function buildSectionGap(catItems) {
+  const ownItems  = catItems.filter((i) => i.isOwn);
+  const compItems = catItems.filter((i) => !i.isOwn);
+  const ownBrands  = [...new Set(ownItems.map((i) => i.brand))].filter((b) => OWN_BRANDS.includes(b));
+  const compBrands = [...new Set(compItems.map((i) => i.brand))].filter((b) => COMP_BRANDS.includes(b));
+  if (!ownBrands.length || !compBrands.length) return '';
+
+  const statsFor = (brand) => brandStatsFor(brand, catItems);
+
+  const colHeaders = compBrands.map((b) => `<th style="font-size:.75rem">${b}</th>`).join('') + '<th>vs. + barato</th>';
+
+  const rowsHtml = ownBrands.map((ownBrand) => {
+    const os = statsFor(ownBrand);
+    const compCells = compBrands.map((compBrand) => {
+      const cs  = statsFor(compBrand);
+      const gap = gapPct(os.avgPrice, cs.avgPrice);
+      if (gap === null) return '<td><span class="gap-pill neutral">—</span></td>';
+      const sign = gap > 0 ? '+' : '';
+      const cls  = gap <= 0 ? 'positive' : 'negative';
+      const diff = os.avgPrice != null && cs.avgPrice != null ? Math.abs(Math.round(os.avgPrice - cs.avgPrice)) : null;
+      const note = diff != null ? `<br><small style="color:var(--text-muted);font-size:.67rem">${gap <= 0 ? `$${diff} + barato` : `$${diff} + caro`}</small>` : '';
+      return `<td><span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}%</span>${note}</td>`;
+    }).join('');
+
+    const compAvgs = compBrands.map((b) => statsFor(b).avgPrice).filter((p) => p != null);
+    const minComp  = compAvgs.length ? Math.min(...compAvgs) : null;
+    const gapMin   = gapPct(os.avgPrice, minComp);
+
+    return `
+      <tr>
+        <td>
+          <span class="brand-pill own">${ownBrand}</span><br>
+          <small style="color:var(--text-muted);font-size:.72rem">prom. ${fmt(os.avgPrice)} · mín. ${fmt(os.minPrice)}</small>
+        </td>
+        ${compCells}
+        <td>${gapPill(gapMin)}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="detail-section">
+      <div class="detail-section-title">
+        <span class="detail-section-icon">📐</span>
+        GAP de Precios — Nuestras Marcas vs. Competencia
+      </div>
+      <div class="table-card">
+        <div class="table-card-header">Precio promedio · positivo = somos más baratos · negativo = somos más caros</div>
+        <div class="table-wrap">
+          <table class="gap-table">
+            <thead><tr><th>Nuestra marca</th>${colHeaders}</tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── E. Active offers list ─────────────────────────────────────────────
+
+function buildSectionActiveOffers(catItems) {
   const offers = catItems.filter((i) => i.listPrice && i.listPrice > i.price);
   if (!offers.length) return '';
 
-  const sorted = [...offers].sort((a, b) => {
-    const discA = (1 - a.price / a.listPrice);
-    const discB = (1 - b.price / b.listPrice);
-    return discB - discA;
-  });
+  const sorted = [...offers].sort((a, b) => (1 - b.price / b.listPrice) - (1 - a.price / a.listPrice));
 
   const rowsHtml = sorted.map((p) => {
     const disc    = Math.round((1 - p.price / p.listPrice) * 100);
@@ -614,22 +693,14 @@ function buildSectionE(catItems) {
   return `
     <div class="detail-section">
       <div class="detail-section-title">
-        <span class="detail-section-icon">🏷</span>
+        <span class="detail-section-icon">🔖</span>
         Ofertas activas <span class="offer-count-badge">${offers.length}</span>
       </div>
       <div class="table-card">
         <div class="table-wrap">
           <table>
             <thead>
-              <tr>
-                <th>Marca</th>
-                <th>Producto</th>
-                <th>Super</th>
-                <th>Precio normal</th>
-                <th>Precio oferta</th>
-                <th>Ahorro $</th>
-                <th>% desc.</th>
-              </tr>
+              <tr><th>Marca</th><th>Producto</th><th>Super</th><th>Precio lista</th><th>Precio oferta</th><th>Ahorro</th><th>Desc.</th></tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
           </table>
@@ -638,64 +709,86 @@ function buildSectionE(catItems) {
     </div>`;
 }
 
-function buildSuperBreakdown(cat, catItems) {
+// ── F. Product detail tables (own + comp) ────────────────────────────
+
+function buildBrandProductsTable(brandItems) {
   const activeSupers = SUPERS.filter((s) => state.activeSupers.has(s));
-  const blocksHtml = activeSupers.map((s) => {
-    const superItems = catItems.filter((i) => i.super === s);
-    if (!superItems.length) return '';
+  const byName = groupBy(brandItems, 'name');
 
-    const rowsHtml = superItems.map((p) => {
-      const cls = p.isOwn ? 'own' : 'comp';
-      const hasOffer = p.listPrice && p.listPrice > p.price;
-      const disc = hasOffer ? Math.round((1 - p.price / p.listPrice) * 100) : null;
-      return `
-        <tr>
-          <td><span class="brand-pill ${cls}">${p.brand}</span></td>
-          <td class="product-name-cell">${p.name}</td>
-          <td class="price-cell">${fmt(p.price)}</td>
-          <td class="price-cell">${hasOffer ? `<s style="color:var(--text-light)">${fmt(p.listPrice)}</s>` : '—'}</td>
-          <td>${hasOffer ? `<span class="offer-badge">-${disc}%</span>` : '—'}</td>
-        </tr>`;
+  const rowsHtml = [...byName.entries()].map(([name, prods]) => {
+    const superCells = activeSupers.map((s) => {
+      const prod = prods.find((p) => p.super === s);
+      if (!prod) return `<td class="price-dash">—</td>`;
+      const hasOffer = prod.listPrice && prod.listPrice > prod.price;
+      let cell = `<span class="price-bold">${fmt(prod.price)}</span>`;
+      if (hasOffer) {
+        const disc = Math.round((1 - prod.price / prod.listPrice) * 100);
+        cell += ` <span class="offer-badge">🏷 -${disc}%</span>`;
+      }
+      return `<td>${cell}</td>`;
     }).join('');
-
+    const hasAnyOffer = prods.some((p) => p.listPrice && p.listPrice > p.price);
     return `
-      <div class="super-block">
-        <div class="super-block-title" style="border-color:${SUPER_COLORS[s] || '#999'}">${s} <span class="super-block-count">${superItems.length} prods.</span></div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Marca</th><th>Producto</th><th>Precio</th><th>Precio lista</th><th>Oferta</th></tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
-        </div>
-      </div>`;
+      <tr>
+        <td class="product-name-cell">${name}</td>
+        ${superCells}
+        <td>${hasAnyOffer ? '<span class="offer-badge">Sí</span>' : '<span style="color:var(--text-light)">—</span>'}</td>
+      </tr>`;
   }).join('');
 
-  if (!blocksHtml) return '';
-
+  const superHeaders = activeSupers.map((s) => `<th>${s}</th>`).join('');
   return `
-    <div class="detail-section">
-      <div class="detail-section-title">
-        <span class="detail-section-icon">🏪</span>
-        Desglose por supermercado
-      </div>
-      <div class="super-breakdown">${blocksHtml}</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nombre</th>${superHeaders}<th>¿Oferta?</th></tr></thead>
+        <tbody>${rowsHtml || '<tr><td colspan="99" style="text-align:center;padding:20px;color:var(--text-muted)">Sin productos</td></tr>'}</tbody>
+      </table>
     </div>`;
+}
+
+function buildBrandSection(brand, items, isOwn) {
+  const cls = isOwn ? 'own' : 'comp';
+  return `
+    <div class="brand-section">
+      <div class="brand-section-header">
+        <span class="brand-pill ${cls}">${brand}</span>
+        <span class="brand-count">${items.length} producto${items.length !== 1 ? 's' : ''}</span>
+      </div>
+      ${buildBrandProductsTable(items)}
+    </div>`;
+}
+
+function buildSectionProductDetail(catItems) {
+  const ownItems  = catItems.filter((i) => i.isOwn);
+  const compItems = catItems.filter((i) => !i.isOwn);
+
+  const ownHtml = ownItems.length
+    ? `<div class="detail-section">
+        <div class="detail-section-title"><span class="detail-section-icon">🏷</span> Nuestras Marcas — detalle de productos</div>
+        ${[...groupBy(ownItems, 'brand').entries()].map(([b, it]) => buildBrandSection(b, it, true)).join('')}
+       </div>`
+    : '';
+
+  const compHtml = compItems.length
+    ? `<div class="detail-section">
+        <div class="detail-section-title"><span class="detail-section-icon">🔵</span> Competencia — detalle de productos</div>
+        ${[...groupBy(compItems, 'brand').entries()].map(([b, it]) => buildBrandSection(b, it, false)).join('')}
+       </div>`
+    : '';
+
+  return ownHtml + compHtml;
 }
 
 function renderCategory(cat) {
   const main = document.getElementById('appMain');
   const meta = CAT_META[cat];
 
-  // Items for this category, respecting super + brand filters
   const catItems = state.raw.items
     .filter((i) => i.category === cat && state.activeSupers.has(i.super))
     .filter((i) => state.activeBrands.has(i.brand));
 
   const canvasId = `chart-detail-${meta.cls}`;
 
-  // Super chips (inline in detail)
   const superChipsHtml = SUPERS.map((s) => {
     const active = state.activeSupers.has(s) ? 'active' : '';
     const clsKey = s === 'Disco' ? 'disco' : s === 'TaTa' ? 'tata' : s === 'Tienda Inglesa' ? 'ti' : 'ed';
@@ -717,25 +810,22 @@ function renderCategory(cat) {
       <span class="filter-label">Supermercados:</span>
       <div class="chip-row" id="detailChipSupers">${superChipsHtml}</div>
     </div>
-    ${buildSectionA(catItems)}
-    ${buildSectionB(catItems)}
-    ${buildSectionC(cat, catItems, canvasId)}
-    ${buildSectionD(catItems)}
-    ${buildSectionE(catItems)}
-    ${buildSuperBreakdown(cat, catItems)}
+    ${buildSectionPriceChart(cat, catItems, canvasId)}
+    ${buildSectionSkuMatrix(catItems)}
+    ${buildSectionOfferAnalysis(catItems)}
+    ${buildSectionGap(catItems)}
+    ${buildSectionActiveOffers(catItems)}
+    ${buildSectionProductDetail(catItems)}
   `;
 
-  // Wire back button
   document.getElementById('btnBack')?.addEventListener('click', () => setView('home'));
 
-  // Wire detail super chips
   document.querySelectorAll('#detailChipSupers .chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const s = chip.dataset.super;
       if (state.activeSupers.has(s)) {
         state.activeSupers.delete(s);
         chip.classList.remove('active');
-        // also sync main filter bar
         document.querySelector(`#chipSupers .chip[data-super="${s}"]`)?.classList.remove('active');
       } else {
         state.activeSupers.add(s);
@@ -747,9 +837,8 @@ function renderCategory(cat) {
     });
   });
 
-  // Render chart after DOM
   requestAnimationFrame(() => {
-    buildSectionC_chart(canvasId, catItems);
+    buildChartPricePositioning(canvasId, catItems);
   });
 }
 

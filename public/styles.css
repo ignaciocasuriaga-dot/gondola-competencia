@@ -1157,3 +1157,48 @@ tbody tr.row-own { background: #e8f4ff; }
   font-weight: 500;
 }
 
+
+/* Offer rate bar */
+.offer-rate-bar {
+  flex: 1;
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 60px;
+}
+.offer-rate-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width .3s ease;
+}
+
+/* SKU list inside matrix cells */
+.sku-list {
+  list-style: none;
+  padding: 6px 0 2px 0;
+  margin: 0;
+  font-size: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sku-list li {
+  padding: 4px 6px;
+  background: var(--bg);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* SKU matrix */
+.sku-matrix th, .sku-matrix td {
+  vertical-align: top;
+  min-width: 80px;
+}
+.sku-matrix details summary {
+  font-size: .78rem;
+  color: var(--blue, #1976d2);
+}
+.sku-matrix details[open] summary {
+  margin-bottom: 4px;
+}
