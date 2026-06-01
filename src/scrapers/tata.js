@@ -1,63 +1,82 @@
 import axios from 'axios';
 import { classifyCategory, classifyBrand } from '../classify.js';
 
-const ENDPOINT = 'https://www.tata.com.uy/api/graphql';
+// TaTa runs on VTEX — use the catalog search API (simpler and more stable than GraphQL)
+const ENDPOINT = 'https://www.tata.com.uy/api/catalog_system/pub/products/search';
 const HEADERS = {
-  'Accept': 'application/json',
-  'Origin': 'https://www.tata.com.uy',
-  'Referer': 'https://www.tata.com.uy/',
-  'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  Accept: 'application/json',
+  'Accept-Language': 'es-UY,es;q=0.9',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  Referer: 'https://www.tata.com.uy/',
+  Origin: 'https://www.tata.com.uy',
 };
 
-async function searchTermTata(term) {
-  const variables = {
-    first: 100,
-    after: '0',
-    sort: 'score_desc',
-    term,
-    selectedFacets: [
-      { key: 'channel', value: JSON.stringify({ salesChannel: '4', regionId: '' }) },
-      { key: 'locale', value: 'es-uy' },
-    ],
+function offerFrom(product) {
+  const item = product.items?.[0];
+  const seller = item?.sellers?.find(s => s.sellerDefault) ?? item?.sellers?.[0];
+  return {
+    sku: item?.itemId ?? product.productId,
+    name: item?.nameComplete ?? item?.name ?? product.productName ?? '',
+    brandField: product.brand ?? '',
+    price: seller?.commertialOffer?.Price ?? null,
+    listPrice: seller?.commertialOffer?.ListPrice ?? null,
+    url: product.link ?? (product.linkText ? `https://www.tata.com.uy/${product.linkText}/p` : null),
   };
-  const url = `${ENDPOINT}?operationName=ProductsQuery&variables=${encodeURIComponent(JSON.stringify(variables))}`;
-  const { data } = await axios.get(url, { headers: HEADERS, timeout: 30000 });
-  if (data.errors) throw new Error('GraphQL errors: ' + JSON.stringify(data.errors));
-  return data.data?.search?.products?.edges ?? [];
+}
+
+async function searchTerm(term) {
+  const url = new URL(ENDPOINT);
+  url.searchParams.set('ft', term);
+  url.searchParams.set('_from', '0');
+  url.searchParams.set('_to', '49');
+  const { data } = await axios.get(url.toString(), { headers: HEADERS, timeout: 30000 });
+  return Array.isArray(data) ? data : [];
 }
 
 export async function scrapeTata(terms) {
   const bySku = new Map();
-  for (const term of terms) {
-    let edges;
-    try { edges = await searchTermTata(term); }
-    catch (e) { console.error(`  ⚠ tata "${term}": ${e.message}`); continue; }
+  const searched = new Set();
 
-    for (const e of edges) {
-      const n = e.node;
-      const brandField = n.brand?.name ?? '';
-      const category = classifyCategory(n.name);
-      if (!category) continue;
+  for (const rawTerm of terms) {
+    const inputs = [rawTerm];
+    const words = rawTerm.split(/\s+/).filter(w => w.length > 3);
+    if (words.length > 1) inputs.push(words[words.length - 1]);
 
-      const sku = n.sku;
-      if (bySku.has(sku)) continue;
+    for (const term of inputs) {
+      if (!term || searched.has(term)) continue;
+      searched.add(term);
 
-      const { brand, isOwn } = classifyBrand(n.name, brandField);
-      const v = n.isVariantOf?.hasVariant?.[0];
-      const o = v?.offers?.offers?.[0];
-      bySku.set(sku, {
-        super: 'TaTa',
-        sku,
-        name: n.name,
-        brand,
-        isOwn,
-        category,
-        price: o?.price ?? null,
-        listPrice: o?.listPrice ?? null,
-        currency: v?.offers?.priceCurrency ?? 'UYU',
-        url: v?.slug ? `https://www.tata.com.uy/${v.slug}/p` : null,
-      });
+      let products;
+      try {
+        products = await searchTerm(term);
+      } catch (e) {
+        console.error(`  ⚠ tata "${term}": ${e.message}`);
+        continue;
+      }
+
+      for (const product of products) {
+        const base = offerFrom(product);
+        if (!base.name) continue;
+        if (!base.price || base.price <= 0) continue;
+
+        const category = classifyCategory(base.name);
+        if (!category) continue;
+        if (bySku.has(base.sku)) continue;
+
+        const { brand, isOwn } = classifyBrand(base.name, base.brandField);
+        bySku.set(base.sku, {
+          super: 'TaTa',
+          sku: base.sku,
+          name: base.name,
+          brand,
+          isOwn,
+          category,
+          price: base.price,
+          listPrice: base.listPrice,
+          currency: 'UYU',
+          url: base.url,
+        });
+      }
     }
   }
   return [...bySku.values()];

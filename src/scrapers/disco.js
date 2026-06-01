@@ -55,6 +55,8 @@ export async function scrapeDisco(terms) {
 
       for (const product of products) {
         const base = offerFrom(product);
+        if (!base.name) continue;
+        if (!base.price || base.price <= 0) continue;
         const category = classifyCategory(base.name);
         if (!category) continue;
         if (bySku.has(base.sku)) continue;
