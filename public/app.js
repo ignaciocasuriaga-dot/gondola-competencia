@@ -52,8 +52,7 @@ const state = {
   currentCat: null,    // 'Pan de Molde' | 'Pan de Viena' | 'Pan de Tortuga'
   activeSupers: new Set(['Disco', 'TaTa', 'Tienda Inglesa', 'El Dorado']),
   activeCats: new Set(['Pan de Molde', 'Pan de Viena', 'Pan de Tortuga']),
-  showOwn: true,
-  showComp: true,
+  activeBrands: new Set(['Bimbo', 'Los Sorchantes', 'comp']),
 };
 
 // Chart.js instances registry
@@ -90,8 +89,8 @@ function filteredItems(catOverride) {
     if (cat && i.category !== cat) return false;
     if (!cat && !state.activeCats.has(i.category)) return false;
     if (!state.activeSupers.has(i.super)) return false;
-    if (i.isOwn  && !state.showOwn)  return false;
-    if (!i.isOwn && !state.showComp) return false;
+    if (i.isOwn  && !state.activeBrands.has(i.brand)) return false;
+    if (!i.isOwn && !state.activeBrands.has('comp')) return false;
     return true;
   });
 }
@@ -202,7 +201,7 @@ function buildHomeCard(cat) {
   if (gap !== null) {
     const sign = gap > 0 ? '+' : '';
     const cls  = gap <= 0 ? 'positive' : 'negative';
-    gapHtml = `<span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}% RGM vs comp.</span>`;
+    gapHtml = `<span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}% nuestras vs comp.</span>`;
   }
 
   // Mini bar: relative position (own vs comp)
@@ -216,11 +215,11 @@ function buildHomeCard(cat) {
     barHtml = `
       <div class="home-card-bar-wrap">
         <div class="home-card-bar-label">
-          <span style="color:#1976d2">RGM ${fmt(avgOwn)}</span>
+          <span style="color:#1976d2">Nuestras ${fmt(avgOwn)}</span>
           <span style="color:#9e9e9e">Comp. ${fmt(avgComp)}</span>
         </div>
         <div class="home-card-bar-track">
-          <div class="home-card-bar-marker rgm" style="left:${ownPct}%" title="RGM promedio"></div>
+          <div class="home-card-bar-marker rgm" style="left:${ownPct}%" title="Nuestras marcas promedio"></div>
           <div class="home-card-bar-marker comp" style="left:${compPct}%" title="Competencia promedio"></div>
         </div>
       </div>`;
@@ -245,7 +244,7 @@ function buildHomeCard(cat) {
           <span class="home-card-stat-value comp">${compItems.length} prods.</span>
         </div>
         <div class="home-card-stat">
-          <span class="home-card-stat-label">Prom. RGM</span>
+          <span class="home-card-stat-label">Prom. nuestras</span>
           <span class="home-card-stat-value">${fmt(avgOwn)}</span>
         </div>
         <div class="home-card-stat">
@@ -306,7 +305,7 @@ function buildGapSummaryTable() {
             <tr>
               <th>Categoría</th>
               <th>Comp. más barata</th>
-              <th>Nuestro mejor precio</th>
+              <th>Nuestro mejor precio (Bimbo/Los Sorchantes)</th>
               <th>Precio comp. min.</th>
               <th>GAP %</th>
             </tr>
@@ -571,12 +570,12 @@ function buildSectionD(catItems) {
         GAP de Precios
       </div>
       <div class="table-card">
-        <div class="table-card-header">GAP RGM vs. Competencia (precio promedio)</div>
+        <div class="table-card-header">GAP Bimbo / Los Sorchantes vs. Competencia (precio promedio)</div>
         <div class="table-wrap">
           <table class="gap-table">
             <thead>
               <tr>
-                <th>Marca RGM</th>
+                <th>Nuestra marca</th>
                 ${colHeaders}
               </tr>
             </thead>
@@ -694,8 +693,8 @@ function renderCategory(cat) {
   const catItems = state.raw.items
     .filter((i) => i.category === cat && state.activeSupers.has(i.super))
     .filter((i) => {
-      if (i.isOwn  && !state.showOwn)  return false;
-      if (!i.isOwn && !state.showComp) return false;
+      if (i.isOwn  && !state.activeBrands.has(i.brand)) return false;
+      if (!i.isOwn && !state.activeBrands.has('comp')) return false;
       return true;
     });
 
@@ -811,12 +810,12 @@ function initFilters() {
   document.querySelectorAll('#chipMarcas .chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const m = chip.dataset.marca;
-      if (m === 'own') {
-        state.showOwn = !state.showOwn;
-        chip.classList.toggle('active', state.showOwn);
-      } else if (m === 'comp') {
-        state.showComp = !state.showComp;
-        chip.classList.toggle('active', state.showComp);
+      if (state.activeBrands.has(m)) {
+        state.activeBrands.delete(m);
+        chip.classList.remove('active');
+      } else {
+        state.activeBrands.add(m);
+        chip.classList.add('active');
       }
       destroyAllCharts();
       render();
