@@ -19,7 +19,7 @@ export const SEARCH_TERMS = [
   'pan tortuga', 'pan hamburguesa',
   'pan viena',
   'magno pan', 'pan magno',
-  'bauducco', 'pan bauducco', 'bauducco pan', 'pan de miga bauducco', 'bauducco lactal',
+  'bauducco', 'pan bauducco', 'bauducco pan', 'bauduco', 'pan bauduco', 'pan de miga bauduco',
   'visconti pan', 'pan visconti',
   'marbella pan', 'pan marbella',
   'precio lider pan', 'pan precio lider',

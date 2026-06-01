@@ -22,7 +22,7 @@ const OWN_BRANDS = [
 
 const COMPETITOR_BRANDS = [
   { brand: 'Magno',        test: (h) => /\bmagno\b/.test(h) },
-  { brand: 'Bauducco',     test: (h) => /bauducco/i.test(h) },
+  { brand: 'Bauducco',     test: (h) => /bauduco+/i.test(h) },
   { brand: 'Visconti',     test: (h) => /\bvisconti\b/.test(h) },
   { brand: 'Marbella',     test: (h) => /\bmarbella\b/.test(h) },
   {
