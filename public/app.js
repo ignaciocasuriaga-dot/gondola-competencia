@@ -52,7 +52,7 @@ const state = {
   currentCat: null,    // 'Pan de Molde' | 'Pan de Viena' | 'Pan de Tortuga'
   activeSupers: new Set(['Disco', 'TaTa', 'Tienda Inglesa', 'El Dorado']),
   activeCats: new Set(['Pan de Molde', 'Pan de Viena', 'Pan de Tortuga']),
-  activeBrands: new Set(['Bimbo', 'Los Sorchantes', 'comp']),
+  activeBrands: new Set(['Bimbo', 'Los Sorchantes', 'Magno', 'Bauducco', 'Visconti', 'Marbella', 'Precio Líder']),
 };
 
 // Chart.js instances registry
@@ -89,8 +89,7 @@ function filteredItems(catOverride) {
     if (cat && i.category !== cat) return false;
     if (!cat && !state.activeCats.has(i.category)) return false;
     if (!state.activeSupers.has(i.super)) return false;
-    if (i.isOwn  && !state.activeBrands.has(i.brand)) return false;
-    if (!i.isOwn && !state.activeBrands.has('comp')) return false;
+    if (!state.activeBrands.has(i.brand)) return false;
     return true;
   });
 }
@@ -692,11 +691,7 @@ function renderCategory(cat) {
   // Items for this category, respecting super + brand filters
   const catItems = state.raw.items
     .filter((i) => i.category === cat && state.activeSupers.has(i.super))
-    .filter((i) => {
-      if (i.isOwn  && !state.activeBrands.has(i.brand)) return false;
-      if (!i.isOwn && !state.activeBrands.has('comp')) return false;
-      return true;
-    });
+    .filter((i) => state.activeBrands.has(i.brand));
 
   const canvasId = `chart-detail-${meta.cls}`;
 
