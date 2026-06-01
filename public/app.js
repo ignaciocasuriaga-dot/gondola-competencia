@@ -331,12 +331,16 @@ function renderHome() {
     <div class="home-grid">${cardsHtml}</div>
     ${gapHtml}`;
 
-  // Wire CTA buttons
-  main.querySelectorAll('.home-card-cta, .home-card').forEach((el) => {
-    el.addEventListener('click', (e) => {
-      const cat = el.dataset.cat;
-      if (cat) setView('category', cat);
+  // Wire CTA buttons — only on the button to avoid double-fire
+  main.querySelectorAll('.home-card-cta').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setView('category', btn.dataset.cat);
     });
+  });
+  // Also wire the card itself (excluding the button, which already stops propagation)
+  main.querySelectorAll('.home-card').forEach((card) => {
+    card.addEventListener('click', () => setView('category', card.dataset.cat));
   });
 }
 
@@ -779,6 +783,38 @@ function buildSectionProductDetail(catItems) {
   return ownHtml + compHtml;
 }
 
+// ── Tab rendering ─────────────────────────────────────────────────────
+
+const DETAIL_TABS = [
+  { id: 'precios',   label: '📊 Precios',    icon: '📊' },
+  { id: 'skus',      label: '📦 SKUs',       icon: '📦' },
+  { id: 'ofertas',   label: '🏷 Ofertas',    icon: '🏷' },
+  { id: 'gap',       label: '📐 GAP',        icon: '📐' },
+];
+
+function renderTabContent(tabId, cat, catItems, canvasId) {
+  const panel = document.getElementById(`tab-panel-${tabId}`);
+  if (!panel) return;
+
+  destroyChart(canvasId);
+
+  switch (tabId) {
+    case 'precios':
+      panel.innerHTML = buildSectionPriceChart(cat, catItems, canvasId) + buildSectionProductDetail(catItems);
+      requestAnimationFrame(() => buildChartPricePositioning(canvasId, catItems));
+      break;
+    case 'skus':
+      panel.innerHTML = buildSectionSkuMatrix(catItems);
+      break;
+    case 'ofertas':
+      panel.innerHTML = buildSectionOfferAnalysis(catItems) + buildSectionActiveOffers(catItems);
+      break;
+    case 'gap':
+      panel.innerHTML = buildSectionGap(catItems);
+      break;
+  }
+}
+
 function renderCategory(cat) {
   const main = document.getElementById('appMain');
   const meta = CAT_META[cat];
@@ -795,6 +831,14 @@ function renderCategory(cat) {
     return `<button class="chip chip-${clsKey} ${active}" data-super="${s}">${s}</button>`;
   }).join('');
 
+  const tabsHtml = DETAIL_TABS.map((t, i) =>
+    `<button class="detail-tab${i === 0 ? ' active' : ''}" data-tab="${t.id}">${t.label}</button>`
+  ).join('');
+
+  const panelsHtml = DETAIL_TABS.map((t, i) =>
+    `<div class="detail-tab-panel${i === 0 ? ' active' : ''}" id="tab-panel-${t.id}"></div>`
+  ).join('');
+
   main.innerHTML = `
     <div class="detail-back">
       <button class="btn-back" id="btnBack">← Volver</button>
@@ -803,23 +847,21 @@ function renderCategory(cat) {
       <div class="detail-header-emoji">${meta.emoji}</div>
       <div class="detail-header-info">
         <div class="detail-header-title">${cat}</div>
-        <div class="detail-header-sub">${catItems.length} productos monitoreados</div>
+        <div class="detail-header-sub">${catItems.length} productos · ${[...new Set(catItems.map(i => i.brand))].length} marcas</div>
       </div>
     </div>
     <div class="detail-filter-row">
       <span class="filter-label">Supermercados:</span>
       <div class="chip-row" id="detailChipSupers">${superChipsHtml}</div>
     </div>
-    ${buildSectionPriceChart(cat, catItems, canvasId)}
-    ${buildSectionSkuMatrix(catItems)}
-    ${buildSectionOfferAnalysis(catItems)}
-    ${buildSectionGap(catItems)}
-    ${buildSectionActiveOffers(catItems)}
-    ${buildSectionProductDetail(catItems)}
+    <div class="detail-tabs-bar">${tabsHtml}</div>
+    <div class="detail-tabs-content">${panelsHtml}</div>
   `;
 
-  document.getElementById('btnBack')?.addEventListener('click', () => setView('home'));
+  // Wire back button
+  document.getElementById('btnBack').addEventListener('click', () => setView('home'));
 
+  // Wire super chips
   document.querySelectorAll('#detailChipSupers .chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const s = chip.dataset.super;
@@ -837,9 +879,22 @@ function renderCategory(cat) {
     });
   });
 
-  requestAnimationFrame(() => {
-    buildChartPricePositioning(canvasId, catItems);
+  // Wire tabs
+  let activeTab = 'precios';
+  document.querySelectorAll('.detail-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.detail-tab').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.detail-tab-panel').forEach((p) => p.classList.remove('active'));
+      btn.classList.add('active');
+      const tabId = btn.dataset.tab;
+      document.getElementById(`tab-panel-${tabId}`)?.classList.add('active');
+      renderTabContent(tabId, cat, catItems, canvasId);
+      activeTab = tabId;
+    });
   });
+
+  // Render first tab
+  renderTabContent('precios', cat, catItems, canvasId);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

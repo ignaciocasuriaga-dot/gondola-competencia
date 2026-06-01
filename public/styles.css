@@ -1202,3 +1202,33 @@ tbody tr.row-own { background: #e8f4ff; }
 .sku-matrix details[open] summary {
   margin-bottom: 4px;
 }
+
+/* ═══ Detail Tabs ═══════════════════════════════════════════════════════ */
+.detail-tabs-bar {
+  display: flex;
+  gap: 4px;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
+  overflow-x: auto;
+}
+.detail-tab {
+  padding: 12px 20px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: .88rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.detail-tab:hover { color: var(--text); }
+.detail-tab.active {
+  color: var(--blue, #1976d2);
+  border-bottom-color: var(--blue, #1976d2);
+}
+.detail-tab-panel { display: none; padding: 0; }
+.detail-tab-panel.active { display: block; }

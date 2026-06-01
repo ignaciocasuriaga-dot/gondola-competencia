@@ -63,7 +63,9 @@ export async function scrapeTata(terms) {
         if (!category) continue;
         if (bySku.has(base.sku)) continue;
 
-        const { brand, isOwn } = classifyBrand(base.name, base.brandField);
+        const _br = classifyBrand(base.name, base.brandField);
+        if (!_br) continue;
+        const { brand, isOwn } = _br;
         bySku.set(base.sku, {
           super: 'TaTa',
           sku: base.sku,
