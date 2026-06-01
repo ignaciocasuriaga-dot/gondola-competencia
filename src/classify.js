@@ -22,7 +22,7 @@ const OWN_BRANDS = [
 
 const COMPETITOR_BRANDS = [
   { brand: 'Magno',        test: (h) => /\bmagno\b/.test(h) },
-  { brand: 'Bauducco',     test: (h) => /\bbauducco\b/.test(h) },
+  { brand: 'Bauducco',     test: (h) => /bauducco/i.test(h) },
   { brand: 'Visconti',     test: (h) => /\bvisconti\b/.test(h) },
   { brand: 'Marbella',     test: (h) => /\bmarbella\b/.test(h) },
   {
@@ -37,7 +37,7 @@ export function classifyCategory(name) {
   const n = (name || '').toLowerCase();
   if (/\btortuga\b|\bhamburguesa\b/.test(n)) return 'Pan de Tortuga';
   if (/\bviena\b/.test(n)) return 'Pan de Viena';
-  if (/\b(molde|lactal|lacteado|sandwich|tostado)\b/.test(n)) return 'Pan de Molde';
+  if (/\b(molde|lactal|lacteado|sandwich|tostado|miga|americano|blanco|integral)\b/.test(n)) return 'Pan de Molde';
   return null;
 }
 
