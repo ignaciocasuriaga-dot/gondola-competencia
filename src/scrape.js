@@ -11,7 +11,8 @@ import { scrapeTiendaInglesa } from './scrapers/tiendainglesa.js';
 import { scrapeElDorado } from './scrapers/eldorado.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_FILE = join(__dirname, '..', 'data', 'latest.json');
+const DATA_FILE = process.env.DATA_FILE
+  || (__dirname.startsWith('/var/task') ? '/tmp/gondola-latest.json' : join(__dirname, '..', 'data', 'latest.json'));
 
 export const SEARCH_TERMS = [
   'pan bimbo', 'bimbo pan', 'bimbo artesano', 'los sorchantes', 'sorchantes',
@@ -66,9 +67,10 @@ export async function runScrape() {
     items,
   };
 
-  await mkdir(join(__dirname, '..', 'data'), { recursive: true });
+  const dataDir = dirname(DATA_FILE);
+  await mkdir(dataDir, { recursive: true }).catch(() => {});
   await writeFile(DATA_FILE, JSON.stringify(output, null, 2), 'utf-8');
-  console.log(`\nTotal: ${items.length} productos → data/latest.json`);
+  console.log(`\nTotal: ${items.length} productos → ${DATA_FILE}`);
   return output;
 }
 
