@@ -907,6 +907,29 @@ tbody td {
 }
 .btn-pdf:hover { border-color: #1976d2; color: #1976d2; background: #e3f2fd; }
 
+/* CSV bar */
+.csv-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px 32px;
+  justify-content: center;
+}
+.btn-csv {
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 24px;
+  font-size: .9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  letter-spacing: .01em;
+}
+.btn-csv:hover { background: #1565c0; transform: translateY(-1px); }
+.csv-meta { font-size: .8rem; color: var(--text-muted); }
+
 /* GAP pills */
 .gap-pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: .8rem; font-weight: 700; }
 .gap-pill.positive { background: #e8f5e9; color: #2e7d32; }

@@ -36,7 +36,7 @@ const COMPETITOR_BRANDS = [
 export function classifyCategory(name) {
   const n = (name || '').toLowerCase();
   if (/\btortuga\b|\bhamburguesa\b/.test(n)) return 'Pan de Tortuga';
-  if (/\bviena\b/.test(n)) return 'Pan de Viena';
+  if (/\bviena\b|\bpanchos?\b/.test(n)) return 'Pan de Viena';
   if (/\b(molde|lactal|lacteado|sandwich|tostado|miga|americano|blanco|integral)\b/.test(n)) return 'Pan de Molde';
   return null;
 }

@@ -18,7 +18,7 @@ export const SEARCH_TERMS = [
   'pan bimbo', 'bimbo pan', 'bimbo artesano', 'los sorchantes', 'sorchantes',
   'pan de molde', 'pan lactal', 'pan sandwich',
   'pan tortuga', 'pan hamburguesa',
-  'pan viena',
+  'pan viena', 'pan pancho', 'pan panchos', 'panchos pan',
   'magno pan', 'pan magno',
   'bauducco', 'pan bauducco', 'bauducco pan', 'bauduco', 'pan bauduco', 'pan de miga bauduco',
   'visconti pan', 'pan visconti',

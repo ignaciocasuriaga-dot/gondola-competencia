@@ -151,6 +151,40 @@ function exportPDF() {
   window.print();
 }
 
+function exportCSV() {
+  const items = state.raw.items;
+  if (!items || !items.length) { toast('No hay datos para exportar.', 'error'); return; }
+
+  const headers = ['Supermercado', 'Marca', 'Categoría', 'Producto', 'Precio', 'Precio Lista', 'En Oferta', 'Descuento %', 'SKU', 'URL'];
+  const rows = items.map((i) => {
+    const hasOffer = i.listPrice && i.listPrice > i.price;
+    const disc = hasOffer ? ((1 - i.price / i.listPrice) * 100).toFixed(1) : '';
+    return [
+      i.super,
+      i.brand,
+      i.category,
+      i.name,
+      i.price ?? '',
+      i.listPrice ?? '',
+      hasOffer ? 'Sí' : 'No',
+      disc,
+      i.sku,
+      i.url ?? '',
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+  });
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const date = state.raw.generatedAt ? new Date(state.raw.generatedAt).toISOString().slice(0, 10) : 'datos';
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `gondola-competencia-${date}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`CSV exportado: ${items.length} productos`, 'success');
+}
+
 // ── Home view ──────────────────────────────────────────────────────────────
 
 function renderHome() {
@@ -197,7 +231,14 @@ function renderHome() {
       </div>`;
   }).join('');
 
-  main.innerHTML = `<div class="home-grid">${cardsHtml}</div>`;
+  main.innerHTML = `
+    <div class="home-grid">${cardsHtml}</div>
+    <div class="csv-bar">
+      <button class="btn-csv" id="btnExportCSV">⬇ Descargar CSV completo</button>
+      <span class="csv-meta">${state.raw.items.length} productos · ${state.raw.generatedAt ? formatDate(state.raw.generatedAt) : '—'}</span>
+    </div>`;
+
+  document.getElementById('btnExportCSV')?.addEventListener('click', exportCSV);
 
   main.querySelectorAll('.home-card-cta').forEach((btn) => {
     btn.addEventListener('click', (e) => {
