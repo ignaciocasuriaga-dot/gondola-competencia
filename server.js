@@ -48,6 +48,11 @@ app.post('/api/refresh', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Gondola Competencia corriendo en http://localhost:${PORT}`);
-});
+// For local dev: listen on PORT. For Vercel serverless: export the app.
+if (process.env.NODE_ENV !== 'production' || process.env.LOCAL_DEV) {
+  app.listen(PORT, () => {
+    console.log(`Gondola Competencia corriendo en http://localhost:${PORT}`);
+  });
+}
+
+export default app;
