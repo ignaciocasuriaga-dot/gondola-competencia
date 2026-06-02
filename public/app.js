@@ -1,5 +1,5 @@
 /**
- * Góndola Competencia — Frontend
+ * Góndola Competencia — Frontend (5-view rewrite)
  * Vanilla JS, ES modules. Chart.js from CDN.
  */
 
@@ -22,32 +22,25 @@ const SUPER_COLORS = {
   'El Dorado':      '#e65100',
 };
 
-const COMP_COLORS = {
-  'Magno':        '#f57c00',
-  'Bauducco':     '#c2185b',
-  'Visconti':     '#0288d1',
-  'Marbella':     '#388e3c',
-  'Precio Líder': '#5d4037',
+const BRAND_COLORS = {
+  'Bimbo':          '#1565c0',
+  'Los Sorchantes': '#0288d1',
+  'Bauducco':       '#c2185b',
+  'Visconti':       '#7b1fa2',
+  'Magno':          '#e65100',
+  'Marbella':       '#388e3c',
 };
 
 const OWN_BRANDS  = ['Bimbo', 'Los Sorchantes'];
-const COMP_BRANDS = ['Magno', 'Bauducco', 'Visconti', 'Marbella', 'Precio Líder'];
-
-const BADGE_IDS = {
-  'Pan de Molde':   'badgeMolde',
-  'Pan de Viena':   'badgeViena',
-  'Pan de Tortuga': 'badgeTortuga',
-};
+const COMP_BRANDS = ['Bauducco', 'Visconti', 'Magno', 'Marbella'];
+const ALL_BRANDS  = [...OWN_BRANDS, ...COMP_BRANDS];
 
 // ── State ──────────────────────────────────────────────────────────────────
 
 const state = {
-  raw: { generatedAt: null, items: [] },
-  view: 'home',          // 'home' | 'category' | 'brand'
-  currentCat: null,
-  currentBrand: null,
+  raw:          { generatedAt: null, items: [] },
+  currentView:  'resumen',
   activeSupers: new Set(['Disco', 'TaTa', 'Tienda Inglesa', 'El Dorado']),
-  activeBrands: new Set(['Bimbo', 'Los Sorchantes', 'Magno', 'Bauducco', 'Visconti', 'Marbella', 'Precio Líder']),
 };
 
 const charts = {};
@@ -83,9 +76,15 @@ function destroyAllCharts() {
   Object.keys(charts).forEach(destroyChart);
 }
 
-function brandColor(brand) {
-  if (OWN_BRANDS.includes(brand)) return '#1976d2';
-  return COMP_COLORS[brand] || '#9e9e9e';
+function brandColor(brand, semitransparent = false) {
+  const c = BRAND_COLORS[brand] || '#9e9e9e';
+  return semitransparent ? c + 'aa' : c;
+}
+
+function filteredItems() {
+  return state.raw.items.filter(
+    (i) => state.activeSupers.has(i.super) && ALL_BRANDS.includes(i.brand)
+  );
 }
 
 function brandStatsFor(brand, items) {
@@ -119,7 +118,7 @@ function clearToasts() {
   document.querySelectorAll('.toast').forEach((t) => t.remove());
 }
 
-// ── Header / badges ────────────────────────────────────────────────────────
+// ── Header ─────────────────────────────────────────────────────────────────
 
 function updateLastUpdate() {
   const el = document.getElementById('lastUpdate');
@@ -128,28 +127,18 @@ function updateLastUpdate() {
     : 'Sin datos';
 }
 
-function updateCategoryBadges() {
-  for (const cat of CATEGORIES) {
-    const el = document.getElementById(BADGE_IDS[cat]);
-    if (!el) continue;
-    const count = state.raw.items.filter((i) => i.category === cat).length;
-    el.textContent = count > 0 ? `${count}` : '—';
-  }
-}
-
 // ── Navigation ─────────────────────────────────────────────────────────────
 
-function setView(view, cat, brand) {
+function setView(view) {
   destroyAllCharts();
-  state.view = view;
-  state.currentCat = cat || null;
-  state.currentBrand = brand || null;
+  state.currentView = view;
+  document.querySelectorAll('.nav-tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.view === view);
+  });
   render();
 }
 
-function exportPDF() {
-  window.print();
-}
+// ── CSV Export ─────────────────────────────────────────────────────────────
 
 function exportCSV() {
   const items = state.raw.items;
@@ -160,352 +149,61 @@ function exportCSV() {
     const hasOffer = i.listPrice && i.listPrice > i.price;
     const disc = hasOffer ? ((1 - i.price / i.listPrice) * 100).toFixed(1) : '';
     return [
-      i.super,
-      i.brand,
-      i.category,
-      i.name,
-      i.price ?? '',
-      i.listPrice ?? '',
-      hasOffer ? 'Sí' : 'No',
-      disc,
-      i.sku,
-      i.url ?? '',
+      i.super, i.brand, i.category, i.name,
+      i.price ?? '', i.listPrice ?? '',
+      hasOffer ? 'Sí' : 'No', disc, i.sku, i.url ?? '',
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
 
-  const csv = [headers.join(','), ...rows].join('\n');
+  const csv  = [headers.join(','), ...rows].join('\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const date = state.raw.generatedAt ? new Date(state.raw.generatedAt).toISOString().slice(0, 10) : 'datos';
   const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `gondola-competencia-${date}.csv`;
-  a.click();
+  a.href = url; a.download = `gondola-competencia-${date}.csv`; a.click();
   URL.revokeObjectURL(url);
   toast(`CSV exportado: ${items.length} productos`, 'success');
 }
 
-// ── Home view ──────────────────────────────────────────────────────────────
+// ── Empty state helper ─────────────────────────────────────────────────────
 
-function renderHome() {
-  const main = document.getElementById('appMain');
-
-  if (state.raw.items.length === 0) {
-    main.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-emoji">📦</div>
-        <h3>Sin datos cargados</h3>
-        <p>Todavía no se han obtenido precios. Hacé clic en "Actualizar" para iniciar el relevamiento.</p>
-        <button class="btn-refresh" id="emptyRefreshBtn">
-          <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"/>
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-          </svg>
-          Actualizar Precios
-        </button>
-      </div>`;
-    document.getElementById('emptyRefreshBtn')?.addEventListener('click', doRefresh);
-    return;
-  }
-
-  const cardsHtml = CATEGORIES.map((cat) => {
-    const meta      = CAT_META[cat];
-    const items     = state.raw.items.filter((i) => i.category === cat && state.activeSupers.has(i.super));
-    const brands    = [...OWN_BRANDS, ...COMP_BRANDS].filter((b) => items.some((i) => i.brand === b));
-    const skuCount  = items.length;
-    const chartH    = Math.max(200, brands.length * 44 + 40);
-
-    return `
-      <div class="home-card home-card-${meta.cls}" data-cat="${cat}">
-        <div class="home-card-head">
-          <span class="home-card-emoji">${meta.emoji}</span>
-          <div>
-            <div class="home-card-title">${cat}</div>
-            <div class="home-card-meta">${brands.length} marcas · ${skuCount} SKUs</div>
-          </div>
-        </div>
-        <div class="home-chart-wrap" style="height:${chartH}px">
-          <canvas id="home-chart-${meta.cls}"></canvas>
-        </div>
-        <button class="home-card-cta" data-cat="${cat}">Ver detalle →</button>
-      </div>`;
-  }).join('');
-
-  main.innerHTML = `
-    <div class="home-grid">${cardsHtml}</div>
-    <div class="csv-bar">
-      <button class="btn-csv" id="btnExportCSV">⬇ Descargar CSV completo</button>
-      <span class="csv-meta">${state.raw.items.length} productos · ${state.raw.generatedAt ? formatDate(state.raw.generatedAt) : '—'}</span>
-    </div>`;
-
-  document.getElementById('btnExportCSV')?.addEventListener('click', exportCSV);
-
-  main.querySelectorAll('.home-card-cta').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setView('category', btn.dataset.cat);
-    });
-  });
-  main.querySelectorAll('.home-card').forEach((card) => {
-    card.addEventListener('click', () => setView('category', card.dataset.cat));
-  });
-
-  requestAnimationFrame(() => initHomeCharts());
-}
-
-function initHomeCharts() {
-  for (const cat of CATEGORIES) {
-    const meta   = CAT_META[cat];
-    const items  = state.raw.items.filter((i) => i.category === cat && state.activeSupers.has(i.super));
-    const entries = [...OWN_BRANDS, ...COMP_BRANDS]
-      .map((brand) => {
-        const stats = brandStatsFor(brand, items);
-        if (!stats.total || stats.avgPrice == null) return null;
-        return { brand, avgPrice: stats.avgPrice };
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.avgPrice - b.avgPrice);
-
-    if (!entries.length) continue;
-
-    const canvasId = `home-chart-${meta.cls}`;
-    const ctx = document.getElementById(canvasId)?.getContext('2d');
-    if (!ctx) continue;
-
-    destroyChart(canvasId);
-
-    charts[canvasId] = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: entries.map((e) => e.brand),
-        datasets: [{
-          data:            entries.map((e) => Math.round(e.avgPrice)),
-          backgroundColor: entries.map((e) => brandColor(e.brand)),
-          borderRadius:    6,
-          borderSkipped:   false,
-        }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (c) => ` $${c.parsed.x}` } },
-        },
-        scales: {
-          x: {
-            beginAtZero: false,
-            ticks: { callback: (v) => '$' + v, font: { size: 10 } },
-            grid: { color: '#f0f0f0' },
-            border: { display: false },
-          },
-          y: {
-            ticks: { font: { size: 11 }, color: '#334155' },
-            grid: { display: false },
-            border: { display: false },
-          },
-        },
-      },
-    });
-  }
-}
-
-// ── Category detail view ───────────────────────────────────────────────────
-
-function renderCategory(cat) {
-  const main = document.getElementById('appMain');
-  const meta = CAT_META[cat];
-
-  const catItems = state.raw.items.filter(
-    (i) => i.category === cat && state.activeSupers.has(i.super) && state.activeBrands.has(i.brand)
-  );
-
-  const brands   = [...new Set(catItems.map((i) => i.brand))];
-  const skuCount = catItems.length;
-
-  const superChipsHtml = SUPERS.map((s) => {
-    const active  = state.activeSupers.has(s) ? 'active' : '';
-    const clsKey  = { 'Disco': 'disco', 'TaTa': 'tata', 'Tienda Inglesa': 'ti', 'El Dorado': 'ed' }[s];
-    return `<button class="chip chip-${clsKey} ${active}" data-super="${s}">${s}</button>`;
-  }).join('');
-
-  const TABS = [
-    { id: 'precios',   label: 'Precios' },
-    { id: 'ofertas',   label: 'Ofertas' },
-    { id: 'cobertura', label: 'Cobertura' },
-  ];
-
-  const tabsHtml   = TABS.map((t, i) =>
-    `<button class="detail-tab${i === 0 ? ' active' : ''}" data-tab="${t.id}">${t.label}</button>`
-  ).join('');
-
-  const panelsHtml = TABS.map((t, i) =>
-    `<div class="detail-tab-panel${i === 0 ? ' active' : ''}" id="tab-panel-${t.id}"></div>`
-  ).join('');
-
-  main.innerHTML = `
-    <div class="detail-back">
-      <button class="btn-back" id="btnBack">← Volver</button>
-    </div>
-    <div class="detail-header detail-header-${meta.cls}">
-      <span class="detail-header-emoji">${meta.emoji}</span>
-      <div class="detail-header-info">
-        <div class="detail-header-title">${cat}</div>
-        <div class="detail-header-sub">${brands.length} marcas · ${skuCount} SKUs</div>
-      </div>
-    </div>
-    <div class="detail-filter-row">
-      <span class="filter-label">Supermercados:</span>
-      <div class="chip-row" id="detailChipSupers">${superChipsHtml}</div>
-    </div>
-    <div class="detail-tabs-bar">${tabsHtml}</div>
-    <div class="detail-tabs-content">${panelsHtml}</div>`;
-
-  document.getElementById('btnBack').addEventListener('click', () => setView('home'));
-
-  document.querySelectorAll('#detailChipSupers .chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const s = chip.dataset.super;
-      if (state.activeSupers.has(s)) {
-        state.activeSupers.delete(s);
-        chip.classList.remove('active');
-        document.querySelector(`#chipSupers .chip[data-super="${s}"]`)?.classList.remove('active');
-      } else {
-        state.activeSupers.add(s);
-        chip.classList.add('active');
-        document.querySelector(`#chipSupers .chip[data-super="${s}"]`)?.classList.add('active');
-      }
-      destroyAllCharts();
-      renderCategory(cat);
-    });
-  });
-
-  document.querySelectorAll('.detail-tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.detail-tab').forEach((b) => b.classList.remove('active'));
-      document.querySelectorAll('.detail-tab-panel').forEach((p) => p.classList.remove('active'));
-      btn.classList.add('active');
-      const tabId = btn.dataset.tab;
-      document.getElementById(`tab-panel-${tabId}`)?.classList.add('active');
-      renderTabContent(tabId, cat, catItems);
-    });
-  });
-
-  renderTabContent('precios', cat, catItems);
-}
-
-function renderTabContent(tabId, cat, catItems) {
-  const panel = document.getElementById(`tab-panel-${tabId}`);
-  if (!panel) return;
-
-  const canvasId = `chart-cat-${CAT_META[cat].cls}`;
-  destroyChart(canvasId);
-
-  switch (tabId) {
-    case 'precios':
-      panel.innerHTML = buildTabPrecios(cat, catItems, canvasId);
-      requestAnimationFrame(() => buildCatChart(canvasId, catItems));
-      panel.querySelectorAll('.brand-row-clickable').forEach((row) => {
-        row.addEventListener('click', () => setView('brand', row.dataset.cat, row.dataset.brand));
-      });
-      break;
-    case 'ofertas':
-      panel.innerHTML = buildTabOfertas(catItems);
-      panel.querySelector('.pdf-bar button')?.addEventListener('click', exportPDF);
-      break;
-    case 'cobertura':
-      panel.innerHTML = buildTabCobertura(catItems);
-      panel.querySelector('.pdf-bar button')?.addEventListener('click', exportPDF);
-      break;
-  }
-}
-
-// ── Tab: Precios ───────────────────────────────────────────────────────────
-
-function buildTabPrecios(cat, catItems, canvasId) {
-  const entries = [...OWN_BRANDS, ...COMP_BRANDS]
-    .map((brand) => {
-      const stats = brandStatsFor(brand, catItems);
-      if (!stats.total) return null;
-      return { brand, isOwn: OWN_BRANDS.includes(brand), ...stats };
-    })
-    .filter(Boolean)
-    .sort((a, b) => (a.avgPrice ?? Infinity) - (b.avgPrice ?? Infinity));
-
-  if (!entries.length) return '<div class="tab-empty">Sin datos para los filtros seleccionados.</div>';
-
-  const chartH = Math.max(220, entries.length * 46);
-
-  const rows = entries.map((e) => {
-    const dot = e.isOwn ? '<span class="own-dot">●</span>' : '';
-    const offerCell = e.offerCount > 0
-      ? `<span class="offer-badge">-${Math.round(e.avgDiscount ?? 0)}% · ${e.offerCount} SKU</span>`
-      : '<span class="muted">—</span>';
-    return `
-      <tr class="brand-row-clickable" data-brand="${e.brand}" data-cat="${cat}" title="Ver análisis de ${e.brand}">
-        <td><span class="brand-name-cell">${dot}<span class="brand-pill ${e.isOwn ? 'own' : 'comp'}">${e.brand}</span> <span class="click-hint">Ver →</span></span></td>
-        <td class="price-cell">${fmt(e.avgPrice)}</td>
-        <td class="price-cell">${fmt(e.minPrice)}</td>
-        <td class="price-cell">${fmt(e.maxPrice)}</td>
-        <td class="num-cell">${e.total}</td>
-        <td>${offerCell}</td>
-      </tr>`;
-  }).join('');
-
+function emptyStateHtml() {
   return `
-    <div class="tab-section">
-      <div class="chart-card">
-        <div class="chart-card-title">Precio promedio por marca — menor a mayor</div>
-        <div class="chart-wrap" style="height:${chartH}px">
-          <canvas id="${canvasId}"></canvas>
-        </div>
-      </div>
-    </div>
-    <div class="tab-section">
-      <div class="table-card">
-        <div class="table-card-hint">Hacé clic en una marca para ver su análisis completo</div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Marca</th>
-                <th>Precio prom.</th>
-                <th>Precio mín.</th>
-                <th>Precio máx.</th>
-                <th>SKUs</th>
-                <th>En oferta</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    <div class="pdf-bar"><button class="btn-pdf" onclick="window.print()">📥 Exportar PDF</button></div>`;
+    <div class="empty-state">
+      <div class="empty-state-emoji">📦</div>
+      <h3>Sin datos cargados</h3>
+      <p>Todavía no se han obtenido precios. Hacé clic en "Actualizar" para iniciar el relevamiento.</p>
+      <button class="btn-refresh" id="emptyRefreshBtn">
+        <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+        Actualizar Precios
+      </button>
+    </div>`;
 }
 
-function buildCatChart(canvasId, catItems) {
-  const entries = [...OWN_BRANDS, ...COMP_BRANDS]
-    .map((brand) => {
-      const stats = brandStatsFor(brand, catItems);
-      if (!stats.total || stats.avgPrice == null) return null;
-      return { brand, avgPrice: stats.avgPrice };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.avgPrice - b.avgPrice);
+// ── Horizontal bar chart helper ────────────────────────────────────────────
 
-  if (!entries.length) return;
+function makeHBarChart(canvasId, entries, highlightBrands = []) {
   const ctx = document.getElementById(canvasId)?.getContext('2d');
-  if (!ctx) return;
-
+  if (!ctx || !entries.length) return;
+  destroyChart(canvasId);
+  const bgColors = entries.map((e) => {
+    const isOwn = OWN_BRANDS.includes(e.brand);
+    const base  = brandColor(e.brand);
+    if (highlightBrands.length) {
+      return highlightBrands.includes(e.brand) ? base : base + 'aa';
+    }
+    return isOwn ? base : base + 'aa';
+  });
   charts[canvasId] = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: entries.map((e) => e.brand),
       datasets: [{
         data:            entries.map((e) => Math.round(e.avgPrice)),
-        backgroundColor: entries.map((e) => brandColor(e.brand)),
+        backgroundColor: bgColors,
         borderRadius:    6,
         borderSkipped:   false,
       }],
@@ -521,12 +219,12 @@ function buildCatChart(canvasId, catItems) {
       scales: {
         x: {
           beginAtZero: false,
-          ticks: { callback: (v) => '$' + v, font: { size: 11 } },
+          ticks: { callback: (v) => '$' + v, font: { size: 10 } },
           grid: { color: '#f0f0f0' },
           border: { display: false },
         },
         y: {
-          ticks: { font: { size: 12 }, color: '#334155' },
+          ticks: { font: { size: 11 }, color: '#334155' },
           grid: { display: false },
           border: { display: false },
         },
@@ -535,32 +233,316 @@ function buildCatChart(canvasId, catItems) {
   });
 }
 
-// ── Tab: Ofertas ───────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+// VIEW 1 — RESUMEN
+// ══════════════════════════════════════════════════════════════════════════
 
-function buildTabOfertas(catItems) {
-  const offers = catItems.filter((i) => i.listPrice && i.listPrice > i.price);
+function renderResumen() {
+  const main  = document.getElementById('appMain');
+  const items = filteredItems();
 
-  if (!offers.length) {
-    return '<div class="tab-empty">No hay ofertas activas para los filtros seleccionados.</div>';
+  if (!items.length) {
+    main.innerHTML = emptyStateHtml();
+    document.getElementById('emptyRefreshBtn')?.addEventListener('click', doRefresh);
+    return;
   }
 
-  const sorted    = [...offers].sort((a, b) => (1 - b.price / b.listPrice) - (1 - a.price / a.listPrice));
-  const totalDisc = avg(sorted.map((i) => (1 - i.price / i.listPrice) * 100));
+  const totalSKUs  = items.length;
+  const brands     = [...new Set(items.map((i) => i.brand))].filter((b) => ALL_BRANDS.includes(b));
+  const offers     = items.filter((i) => i.listPrice && i.listPrice > i.price);
+  const superCount = [...new Set(items.map((i) => i.super))].length;
 
-  const summaryHtml = `
-    <div class="offers-summary">
-      <span><strong>${offers.length}</strong> productos en oferta</span>
-      <span class="offer-badge offer-badge-lg">Descuento promedio ${totalDisc?.toFixed(1) ?? '—'}%</span>
+  const kpiHtml = `
+    <div class="summary-kpis">
+      <div class="kpi-card">
+        <div class="kpi-val">${totalSKUs}</div>
+        <div class="kpi-lbl">Total SKUs</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${brands.length}</div>
+        <div class="kpi-lbl">Marcas encontradas</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${offers.length}</div>
+        <div class="kpi-lbl">Productos en oferta</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${superCount}</div>
+        <div class="kpi-lbl">Supermercados</div>
+      </div>
     </div>`;
 
+  const catCardsHtml = CATEGORIES.map((cat) => {
+    const catItems = items.filter((i) => i.category === cat);
+    const catBrands = ALL_BRANDS.filter((b) => catItems.some((i) => i.brand === b));
+    const chartH = Math.max(160, catBrands.length * 44 + 40);
+    const meta = CAT_META[cat];
+    return `
+      <div class="resumen-card">
+        <div class="section-card-head">
+          <span style="font-size:1.4rem">${meta.emoji}</span>
+          <span class="section-card-title">${cat}</span>
+          <span class="section-card-meta">${catBrands.length} marcas · ${catItems.length} SKUs</span>
+        </div>
+        <div style="position:relative;height:${chartH}px">
+          <canvas id="resumen-chart-${meta.cls}"></canvas>
+        </div>
+      </div>`;
+  }).join('');
+
+  main.innerHTML = `
+    ${kpiHtml}
+    <div class="resumen-grid">${catCardsHtml}</div>
+    <div class="csv-bar">
+      <button class="btn-csv" id="btnExportCSV">⬇ Descargar CSV completo</button>
+      <span class="csv-meta">${totalSKUs} productos · ${state.raw.generatedAt ? formatDate(state.raw.generatedAt) : '—'}</span>
+    </div>`;
+
+  document.getElementById('btnExportCSV')?.addEventListener('click', exportCSV);
+
+  requestAnimationFrame(() => {
+    for (const cat of CATEGORIES) {
+      const meta = CAT_META[cat];
+      const catItems = items.filter((i) => i.category === cat);
+      const entries = ALL_BRANDS
+        .map((brand) => {
+          const s = brandStatsFor(brand, catItems);
+          return s.total && s.avgPrice != null ? { brand, avgPrice: s.avgPrice } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.avgPrice - b.avgPrice);
+      makeHBarChart(`resumen-chart-${meta.cls}`, entries);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// VIEW 2 — MIS MARCAS
+// ══════════════════════════════════════════════════════════════════════════
+
+function renderMisMarcas() {
+  const main  = document.getElementById('appMain');
+  const items = filteredItems();
+
+  if (!items.length) {
+    main.innerHTML = emptyStateHtml();
+    document.getElementById('emptyRefreshBtn')?.addEventListener('click', doRefresh);
+    return;
+  }
+
+  // Hero cards per own brand
+  const heroHtml = OWN_BRANDS.map((brand) => {
+    const bColor  = brandColor(brand);
+    const bItems  = items.filter((i) => i.brand === brand);
+    const prices  = bItems.map((i) => i.price).filter((p) => p != null);
+    const avgP    = avg(prices);
+    const stores  = [...new Set(bItems.map((i) => i.super))];
+    return `
+      <div class="mm-hero-card" style="border-left-color:${bColor}">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <span class="brand-pill own" style="background:${bColor}22;color:${bColor};font-size:.85rem;padding:4px 12px">${brand}</span>
+          <span class="brand-hero-badge own-badge" style="background:${bColor}">NUESTRA MARCA</span>
+        </div>
+        <div class="brand-hero-kpis" style="justify-content:flex-start;gap:28px">
+          <div class="brand-kpi">
+            <div class="brand-kpi-val">${bItems.length}</div>
+            <div class="brand-kpi-label">SKUs</div>
+          </div>
+          <div class="brand-kpi">
+            <div class="brand-kpi-val">${fmt(avgP)}</div>
+            <div class="brand-kpi-label">Precio prom.</div>
+          </div>
+          <div class="brand-kpi">
+            <div class="brand-kpi-val">${stores.length}</div>
+            <div class="brand-kpi-label">Supers presentes</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;font-size:.8rem;color:#64748b">${stores.join(', ') || 'Sin datos'}</div>
+      </div>`;
+  }).join('');
+
+  // Per-category price chart sections
+  const catChartsHtml = CATEGORIES.map((cat) => {
+    const catItems = items.filter((i) => i.category === cat);
+    const meta = CAT_META[cat];
+    const catBrands = ALL_BRANDS.filter((b) => catItems.some((i) => i.brand === b));
+    const chartH = Math.max(160, catBrands.length * 44 + 40);
+    return `
+      <div class="section-card" style="margin:0 0 0 0">
+        <div class="section-card-head">
+          <span style="font-size:1.1rem">${meta.emoji}</span>
+          <span class="section-card-title">${cat}</span>
+          <span class="section-card-meta">${catBrands.length} marcas</span>
+        </div>
+        <div style="position:relative;height:${chartH}px">
+          <canvas id="mm-chart-${meta.cls}"></canvas>
+        </div>
+      </div>`;
+  }).join('');
+
+  // GAP table: own brands vs each competitor
+  const gapRowsHtml = OWN_BRANDS.map((own) => {
+    const ownStats = brandStatsFor(own, items);
+    if (!ownStats.avgPrice) return '';
+    const cells = COMP_BRANDS.map((comp) => {
+      const compStats = brandStatsFor(comp, items);
+      const gap = gapPct(ownStats.avgPrice, compStats.avgPrice);
+      if (gap === null) return '<td class="price-cell">—</td>';
+      const sign = gap > 0 ? '+' : '';
+      const cls  = gap <= 0 ? 'positive' : 'negative';
+      return `<td class="price-cell"><span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}%</span></td>`;
+    }).join('');
+    return `
+      <tr>
+        <td><span class="brand-pill own">${own}</span></td>
+        <td class="price-cell">${fmt(ownStats.avgPrice)}</td>
+        ${cells}
+      </tr>`;
+  }).join('');
+
+  const compHeaderCells = COMP_BRANDS.map((b) => `<th>${b}</th>`).join('');
+
+  // Active offers for own brands
+  const ownOffers = items.filter((i) => OWN_BRANDS.includes(i.brand) && i.listPrice && i.listPrice > i.price);
+  const offersHtml = ownOffers.length
+    ? ownOffers.map((p) => {
+        const disc = Math.round((1 - p.price / p.listPrice) * 100);
+        return `
+          <div class="offer-row">
+            <span class="offer-super-tag">${p.super}</span>
+            <span class="brand-pill own">${p.brand}</span>
+            <span class="offer-cat-tag">${p.category}</span>
+            <span class="offer-name">${p.name}</span>
+            <span class="offer-prices">
+              <s class="offer-list-price">${fmt(p.listPrice)}</s>
+              <strong class="offer-sale-price">${fmt(p.price)}</strong>
+            </span>
+            <span class="offer-badge">-${disc}%</span>
+          </div>`;
+      }).join('')
+    : '<div class="tab-empty">No hay ofertas activas para Mis Marcas.</div>';
+
+  main.innerHTML = `
+    <div class="mm-hero-grid">${heroHtml}</div>
+
+    <div class="section-card" style="margin:16px 0 0">
+      <div class="section-card-head">
+        <span class="section-card-title">Precio promedio por categoría (propias destacadas)</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
+        ${catChartsHtml}
+      </div>
+    </div>
+
+    <div class="section-card" style="margin:16px 0 0">
+      <div class="section-card-head">
+        <span class="section-card-title">GAP % — Mis Marcas vs Competencia (precio promedio global)</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Marca propia</th>
+              <th>Precio prom.</th>
+              ${compHeaderCells}
+            </tr>
+          </thead>
+          <tbody>${gapRowsHtml || '<tr><td colspan="6" class="tab-empty">Sin datos</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-card" style="margin:16px 0 0">
+      <div class="section-card-head">
+        <span class="section-card-title">Ofertas activas — Mis Marcas (${ownOffers.length})</span>
+      </div>
+      ${offersHtml}
+    </div>`;
+
+  requestAnimationFrame(() => {
+    for (const cat of CATEGORIES) {
+      const meta = CAT_META[cat];
+      const catItems = items.filter((i) => i.category === cat);
+      const entries = ALL_BRANDS
+        .map((brand) => {
+          const s = brandStatsFor(brand, catItems);
+          return s.total && s.avgPrice != null ? { brand, avgPrice: s.avgPrice } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.avgPrice - b.avgPrice);
+      makeHBarChart(`mm-chart-${meta.cls}`, entries, OWN_BRANDS);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// VIEW 3 — OFERTAS
+// ══════════════════════════════════════════════════════════════════════════
+
+function renderOfertas() {
+  const main  = document.getElementById('appMain');
+  const items = filteredItems();
+
+  if (!items.length) {
+    main.innerHTML = emptyStateHtml();
+    document.getElementById('emptyRefreshBtn')?.addEventListener('click', doRefresh);
+    return;
+  }
+
+  const offers = items.filter((i) => i.listPrice && i.listPrice > i.price);
+
+  if (!offers.length) {
+    main.innerHTML = `<div class="tab-empty" style="padding:80px 24px">No hay ofertas activas con los filtros seleccionados.</div>`;
+    return;
+  }
+
+  const discounts = offers.map((i) => (1 - i.price / i.listPrice) * 100);
+  const avgDisc   = avg(discounts);
+  const maxDisc   = Math.max(...discounts);
+  const ownOffers = offers.filter((i) => OWN_BRANDS.includes(i.brand)).length;
+
+  const kpiHtml = `
+    <div class="summary-kpis">
+      <div class="kpi-card">
+        <div class="kpi-val">${offers.length}</div>
+        <div class="kpi-lbl">Productos en oferta</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${avgDisc?.toFixed(1) ?? '—'}%</div>
+        <div class="kpi-lbl">Descuento promedio</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${maxDisc?.toFixed(0) ?? '—'}%</div>
+        <div class="kpi-lbl">Mayor descuento</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${ownOffers}</div>
+        <div class="kpi-lbl">Ofertas propias</div>
+      </div>
+    </div>`;
+
+  // Sort all offers by discount desc, then group by brand
+  const sorted  = [...offers].sort((a, b) =>
+    (1 - a.price / a.listPrice) - (1 - b.price / b.listPrice)
+  ).reverse();
+
   const byBrand = groupBy(sorted, 'brand');
-  const brandsHtml = [...byBrand.entries()].map(([brand, items]) => {
+  // Sort brands: own first, then by number of offers desc
+  const brandOrder = [...byBrand.entries()].sort((a, b) => {
+    const aOwn = OWN_BRANDS.includes(a[0]) ? 0 : 1;
+    const bOwn = OWN_BRANDS.includes(b[0]) ? 0 : 1;
+    if (aOwn !== bOwn) return aOwn - bOwn;
+    return b[1].length - a[1].length;
+  });
+
+  const brandsHtml = brandOrder.map(([brand, bOffers]) => {
     const isOwn = OWN_BRANDS.includes(brand);
-    const rows = items.map((p) => {
+    const rows = bOffers.map((p) => {
       const disc = Math.round((1 - p.price / p.listPrice) * 100);
       return `
         <div class="offer-row">
           <span class="offer-super-tag">${p.super}</span>
+          <span class="offer-cat-tag">${p.category}</span>
           <span class="offer-name">${p.name}</span>
           <span class="offer-prices">
             <s class="offer-list-price">${fmt(p.listPrice)}</s>
@@ -571,299 +553,257 @@ function buildTabOfertas(catItems) {
     }).join('');
 
     return `
-      <div class="offer-brand-block">
+      <div class="offer-brand-block" style="margin-bottom:12px">
         <div class="offer-brand-head">
           <span class="brand-pill ${isOwn ? 'own' : 'comp'}">${brand}</span>
-          <span class="muted">${items.length} producto${items.length > 1 ? 's' : ''} en oferta</span>
+          <span class="muted">${bOffers.length} producto${bOffers.length > 1 ? 's' : ''} en oferta</span>
         </div>
         <div class="offer-rows">${rows}</div>
       </div>`;
   }).join('');
 
-  return `
-    <div class="tab-section">
-      ${summaryHtml}
+  main.innerHTML = `
+    ${kpiHtml}
+    <div style="padding:0 0 24px">
       ${brandsHtml}
-    </div>
-    <div class="pdf-bar"><button class="btn-pdf" onclick="window.print()">📥 Exportar PDF</button></div>`;
+    </div>`;
 }
 
-// ── Tab: Cobertura ─────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+// VIEW 4 — COMPARATIVA
+// ══════════════════════════════════════════════════════════════════════════
 
-function buildTabCobertura(catItems) {
+function renderComparativa() {
+  const main       = document.getElementById('appMain');
+  const items      = filteredItems();
   const activeSupers = SUPERS.filter((s) => state.activeSupers.has(s));
-  if (!activeSupers.length) return '<div class="tab-empty">Seleccioná al menos un supermercado.</div>';
 
-  const allBrands = [...OWN_BRANDS, ...COMP_BRANDS].filter((b) => catItems.some((i) => i.brand === b));
-  if (!allBrands.length) return '<div class="tab-empty">Sin datos para los filtros seleccionados.</div>';
+  if (!items.length) {
+    main.innerHTML = emptyStateHtml();
+    document.getElementById('emptyRefreshBtn')?.addEventListener('click', doRefresh);
+    return;
+  }
 
-  const blocksHtml = activeSupers.map((s) => {
-    const superItems = catItems.filter((i) => i.super === s);
-    const totalSkus  = superItems.length;
-    const ownSkus    = superItems.filter((i) => i.isOwn).length;
-    const compSkus   = totalSkus - ownSkus;
-    const color      = SUPER_COLORS[s];
+  let html = '';
 
-    const brandsHtml = allBrands
+  for (const cat of CATEGORIES) {
+    const meta     = CAT_META[cat];
+    const catItems = items.filter((i) => i.category === cat);
+    const catBrands = ALL_BRANDS.filter((b) => catItems.some((i) => i.brand === b));
+
+    if (!catBrands.length) continue;
+
+    // Chart entries: avg price per brand across all supers
+    const chartEntries = catBrands
       .map((brand) => {
-        const brandItems = superItems.filter((i) => i.brand === brand);
-        if (!brandItems.length) return '';
-        const isOwn = OWN_BRANDS.includes(brand);
-        return `<span class="brand-pill ${isOwn ? 'own' : 'comp'}">${brand} <span class="pill-count">${brandItems.length}</span></span>`;
+        const s = brandStatsFor(brand, catItems);
+        return s.avgPrice != null ? { brand, avgPrice: s.avgPrice } : null;
       })
       .filter(Boolean)
-      .join('');
+      .sort((a, b) => a.avgPrice - b.avgPrice);
+
+    const cheapest  = chartEntries[0];
+    const mostExp   = chartEntries[chartEntries.length - 1];
+    const chartH    = Math.max(160, catBrands.length * 44 + 40);
+    const chartId   = `comp-chart-${meta.cls}`;
+
+    // Table: rows = brands, columns = supers + general avg/min/max
+    const superHeaders = activeSupers.map((s) => `<th style="text-align:right;color:${SUPER_COLORS[s]}">${s}</th>`).join('');
+    const tableRows = catBrands.map((brand) => {
+      const isOwn = OWN_BRANDS.includes(brand);
+      const superCells = activeSupers.map((s) => {
+        const superBrandItems = catItems.filter((i) => i.brand === brand && i.super === s);
+        if (!superBrandItems.length) return '<td class="price-cell">—</td>';
+        const a = avg(superBrandItems.map((i) => i.price).filter((p) => p != null));
+        return `<td class="price-cell">${fmt(a)}</td>`;
+      }).join('');
+      const allBrandItems = catItems.filter((i) => i.brand === brand);
+      const allPrices     = allBrandItems.map((i) => i.price).filter((p) => p != null);
+      const gAvg = avg(allPrices);
+      const gMin = allPrices.length ? Math.min(...allPrices) : null;
+      const gMax = allPrices.length ? Math.max(...allPrices) : null;
+      return `
+        <tr>
+          <td><span class="brand-pill ${isOwn ? 'own' : 'comp'}">${brand}</span></td>
+          ${superCells}
+          <td class="price-cell">${fmt(gAvg)}</td>
+          <td class="price-cell" style="color:#2e7d32;font-size:.8rem">${fmt(gMin)}</td>
+          <td class="price-cell" style="color:#c62828;font-size:.8rem">${fmt(gMax)}</td>
+        </tr>`;
+    }).join('');
+
+    html += `
+      <div class="section-card">
+        <div class="section-card-head">
+          <span style="font-size:1.2rem">${meta.emoji}</span>
+          <span class="section-card-title">${cat}</span>
+        </div>
+        <div class="insight-bar">
+          ${cheapest ? `<span class="insight insight-green">🏆 Más barato: ${cheapest.brand} (${fmt(cheapest.avgPrice)} prom.)</span>` : ''}
+          ${mostExp && mostExp.brand !== cheapest?.brand ? `<span class="insight insight-red">💸 Más caro: ${mostExp.brand} (${fmt(mostExp.avgPrice)} prom.)</span>` : ''}
+        </div>
+        <div style="position:relative;height:${chartH}px;margin-bottom:20px">
+          <canvas id="${chartId}"></canvas>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Marca</th>
+                ${superHeaders}
+                <th style="text-align:right">Prom. general</th>
+                <th style="text-align:right">Mín.</th>
+                <th style="text-align:right">Máx.</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  main.innerHTML = html || '<div class="tab-empty">Sin datos para los filtros seleccionados.</div>';
+
+  requestAnimationFrame(() => {
+    for (const cat of CATEGORIES) {
+      const meta     = CAT_META[cat];
+      const catItems = items.filter((i) => i.category === cat);
+      const catBrands = ALL_BRANDS.filter((b) => catItems.some((i) => i.brand === b));
+      const entries   = catBrands
+        .map((brand) => {
+          const s = brandStatsFor(brand, catItems);
+          return s.avgPrice != null ? { brand, avgPrice: s.avgPrice } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.avgPrice - b.avgPrice);
+      makeHBarChart(`comp-chart-${meta.cls}`, entries);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// VIEW 5 — COBERTURA
+// ══════════════════════════════════════════════════════════════════════════
+
+function renderCobertura() {
+  const main         = document.getElementById('appMain');
+  const items        = filteredItems();
+  const activeSupers = SUPERS.filter((s) => state.activeSupers.has(s));
+
+  if (!items.length) {
+    main.innerHTML = emptyStateHtml();
+    document.getElementById('emptyRefreshBtn')?.addEventListener('click', doRefresh);
+    return;
+  }
+
+  const presentBrands = ALL_BRANDS.filter((b) => items.some((i) => i.brand === b));
+
+  // Matrix table: rows = brands, cols = supers
+  const superHeaders = activeSupers.map((s) => `<th class="num-cell" style="color:${SUPER_COLORS[s]}">${s}</th>`).join('');
+  const matrixRows = presentBrands.map((brand) => {
+    const isOwn = OWN_BRANDS.includes(brand);
+    const cells = activeSupers.map((s) => {
+      const count = items.filter((i) => i.brand === brand && i.super === s).length;
+      const cls   = count === 0 ? 'cov-zero' : isOwn ? 'cov-own' : 'cov-comp';
+      return `<td class="cov-cell ${cls}">${count > 0 ? count : '—'}</td>`;
+    }).join('');
+    const total = items.filter((i) => i.brand === brand).length;
+    return `
+      <tr>
+        <td><span class="brand-pill ${isOwn ? 'own' : 'comp'}">${brand}</span></td>
+        ${cells}
+        <td class="cov-cell cov-total">${total}</td>
+      </tr>`;
+  }).join('');
+
+  // Totals row
+  const totalCells = activeSupers.map((s) => {
+    const count = items.filter((i) => i.super === s).length;
+    return `<td class="cov-cell cov-total">${count}</td>`;
+  }).join('');
+  const grandTotal = items.length;
+
+  // Per-supermarket blocks
+  const superBlocksHtml = activeSupers.map((s) => {
+    const superItems = items.filter((i) => i.super === s);
+    const ownItems   = superItems.filter((i) => OWN_BRANDS.includes(i.brand));
+    const compItems  = superItems.filter((i) => COMP_BRANDS.includes(i.brand));
+    const color      = SUPER_COLORS[s];
+    const brandsPresent = presentBrands.filter((b) => superItems.some((i) => i.brand === b));
+    const pillsHtml = brandsPresent.map((brand) => {
+      const cnt   = superItems.filter((i) => i.brand === brand).length;
+      const isOwn = OWN_BRANDS.includes(brand);
+      return `<span class="brand-pill ${isOwn ? 'own' : 'comp'}">${brand} <span class="pill-count">${cnt}</span></span>`;
+    }).join('');
 
     return `
       <div class="coverage-block" style="--super-color:${color}">
         <div class="coverage-block-head">
           <span class="coverage-super-name" style="color:${color}">${s}</span>
           <span class="coverage-meta">
-            <span class="coverage-stat">${totalSkus} SKUs</span>
-            <span class="brand-pill own">Propias ${ownSkus}</span>
-            <span class="brand-pill comp">Comp. ${compSkus}</span>
+            <span class="coverage-stat">${superItems.length} SKUs</span>
+            <span class="brand-pill own">Propias ${ownItems.length}</span>
+            <span class="brand-pill comp">Comp. ${compItems.length}</span>
           </span>
         </div>
         <div class="coverage-brands">
-          ${brandsHtml || '<span class="muted">Sin productos</span>'}
+          ${pillsHtml || '<span class="muted">Sin productos</span>'}
         </div>
       </div>`;
   }).join('');
 
-  return `<div class="tab-section">${blocksHtml}</div>
-    <div class="pdf-bar"><button class="btn-pdf" onclick="window.print()">📥 Exportar PDF</button></div>`;
-}
-
-// ── Brand detail view ──────────────────────────────────────────────────────
-
-function renderBrand(cat, brand) {
-  const main    = document.getElementById('appMain');
-  const meta    = CAT_META[cat];
-  const isOwn   = OWN_BRANDS.includes(brand);
-  const color   = brandColor(brand);
-
-  const allCatItems = state.raw.items.filter(
-    (i) => i.category === cat && state.activeSupers.has(i.super)
-  );
-  const brandItems = allCatItems.filter((i) => i.brand === brand);
-  const stats  = brandStatsFor(brand, allCatItems);
-
-  // All brands for comparison chart
-  const allBrandsInCat = [...OWN_BRANDS, ...COMP_BRANDS].filter((b) =>
-    allCatItems.some((i) => i.brand === b)
-  );
-
-  // GAP vs competitors
-  const compBrandsPresent = (isOwn ? COMP_BRANDS : OWN_BRANDS).filter((b) =>
-    allCatItems.some((i) => i.brand === b)
-  );
-
-  const gapRows = compBrandsPresent.map((other) => {
-    const otherStats = brandStatsFor(other, allCatItems);
-    const gap = gapPct(stats.avgPrice, otherStats.avgPrice);
-    if (gap === null) return '';
-    const sign   = gap > 0 ? '+' : '';
-    const cls    = gap <= 0 ? 'positive' : 'negative';
-    const diffAbs = Math.abs(Math.round((stats.avgPrice ?? 0) - (otherStats.avgPrice ?? 0)));
-    const label   = gap <= 0
-      ? `$${diffAbs} más barato que ${other}`
-      : `$${diffAbs} más caro que ${other}`;
-    return `
-      <tr>
-        <td><span class="brand-pill ${OWN_BRANDS.includes(other) ? 'own' : 'comp'}">${other}</span></td>
-        <td class="price-cell">${fmt(otherStats.avgPrice)}</td>
-        <td class="price-cell">${fmt(stats.avgPrice)}</td>
-        <td><span class="gap-pill ${cls}">${sign}${gap.toFixed(1)}%</span></td>
-        <td class="muted" style="font-size:.8rem">${label}</td>
-      </tr>`;
-  }).join('');
-
-  // Products by super
-  const activeSupers = SUPERS.filter((s) => state.activeSupers.has(s));
-  const bySuper = activeSupers.map((s) => {
-    const superProds = brandItems.filter((i) => i.super === s);
-    if (!superProds.length) return '';
-    const rows = superProds.map((p) => {
-      const hasOffer = p.listPrice && p.listPrice > p.price;
-      const disc     = hasOffer ? Math.round((1 - p.price / p.listPrice) * 100) : null;
-      return `
-        <div class="brand-prod-row">
-          <span class="brand-prod-name">${p.name}</span>
-          <span class="brand-prod-prices">
-            ${hasOffer ? `<s class="offer-list-price">${fmt(p.listPrice)}</s>` : ''}
-            <strong>${fmt(p.price)}</strong>
-            ${hasOffer ? `<span class="offer-badge">-${disc}%</span>` : ''}
-          </span>
-        </div>`;
-    }).join('');
-    return `
-      <div class="brand-super-block" style="--super-color:${SUPER_COLORS[s]}">
-        <div class="brand-super-name" style="color:${SUPER_COLORS[s]}">${s} · ${superProds.length} SKU${superProds.length > 1 ? 's' : ''}</div>
-        ${rows}
-      </div>`;
-  }).join('');
-
-  const heroClass = isOwn ? 'brand-hero own' : 'brand-hero comp';
-  const heroBadge = isOwn
-    ? `<span class="brand-hero-badge own-badge">⭐ NUESTRA MARCA</span>`
-    : `<span class="brand-hero-badge comp-badge">COMPETENCIA</span>`;
-
-  const canvasId = `chart-brand-${brand.replace(/\s+/g, '-').toLowerCase()}`;
-
-  const offerSection = stats.offerItems.length ? `
-    <div class="brand-section-card">
-      <div class="brand-section-title">🏷 Ofertas activas (${stats.offerItems.length})</div>
-      ${stats.offerItems.map((p) => {
-        const disc = Math.round((1 - p.price / p.listPrice) * 100);
-        return `
-          <div class="brand-prod-row">
-            <span class="offer-super-tag">${p.super}</span>
-            <span class="brand-prod-name">${p.name}</span>
-            <span class="brand-prod-prices">
-              <s class="offer-list-price">${fmt(p.listPrice)}</s>
-              <strong class="offer-sale-price">${fmt(p.price)}</strong>
-              <span class="offer-badge">-${disc}%</span>
-            </span>
-          </div>`;
-      }).join('')}
-    </div>` : '';
-
-  const gapSection = gapRows ? `
-    <div class="brand-section-card">
-      <div class="brand-section-title">📐 Posicionamiento vs ${isOwn ? 'competidores' : 'nuestras marcas'}</div>
+  main.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-head">
+        <span class="section-card-title">Matriz de cobertura: SKUs por marca × supermercado</span>
+      </div>
       <div class="table-wrap">
         <table>
-          <thead><tr>
-            <th>Marca</th>
-            <th>Su precio prom.</th>
-            <th>Precio prom. ${brand}</th>
-            <th>GAP %</th>
-            <th>Diferencia</th>
-          </tr></thead>
-          <tbody>${gapRows}</tbody>
+          <thead>
+            <tr>
+              <th>Marca</th>
+              ${superHeaders}
+              <th class="num-cell">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${matrixRows}
+            <tr>
+              <td style="font-weight:700;font-size:.8rem;color:#64748b">TOTAL</td>
+              ${totalCells}
+              <td class="cov-cell cov-total">${grandTotal}</td>
+            </tr>
+          </tbody>
         </table>
       </div>
-    </div>` : '';
-
-  main.innerHTML = `
-    <div class="detail-back">
-      <button class="btn-back" id="btnBack">← ${cat}</button>
     </div>
-    <div class="${heroClass}" style="--brand-color:${color}">
-      <div class="brand-hero-left">
-        ${heroBadge}
-        <div class="brand-hero-name">${brand}</div>
-        <div class="brand-hero-meta">${cat} · ${stats.total} SKUs · ${activeSupers.filter((s) => brandItems.some((i) => i.super === s)).length} supermercados</div>
+
+    <div class="section-card">
+      <div class="section-card-head">
+        <span class="section-card-title">Presencia por supermercado</span>
       </div>
-      <div class="brand-hero-kpis">
-        <div class="brand-kpi"><div class="brand-kpi-val">${fmt(stats.avgPrice)}</div><div class="brand-kpi-label">Precio prom.</div></div>
-        <div class="brand-kpi"><div class="brand-kpi-val">${fmt(stats.minPrice)}</div><div class="brand-kpi-label">Precio mín.</div></div>
-        <div class="brand-kpi"><div class="brand-kpi-val">${stats.offerCount || '—'}</div><div class="brand-kpi-label">En oferta</div></div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        ${superBlocksHtml}
       </div>
-    </div>
-
-    <div class="brand-section-card">
-      <div class="brand-section-title">📊 Precio vs todas las marcas — ${cat}</div>
-      <div class="chart-wrap" style="height:${Math.max(200, allBrandsInCat.length * 46)}px">
-        <canvas id="${canvasId}"></canvas>
-      </div>
-    </div>
-
-    <div class="brand-section-card">
-      <div class="brand-section-title">🏪 Productos por supermercado</div>
-      ${bySuper || '<div class="tab-empty">Sin productos en los supermercados seleccionados.</div>'}
-    </div>
-
-    ${offerSection}
-    ${gapSection}
-
-    <div class="pdf-bar"><button class="btn-pdf" onclick="window.print()">📥 Exportar PDF</button></div>
-  `;
-
-  document.getElementById('btnBack').addEventListener('click', () => setView('category', cat));
-
-  requestAnimationFrame(() => {
-    const entries = allBrandsInCat
-      .map((b) => {
-        const s = brandStatsFor(b, allCatItems);
-        return s.avgPrice != null ? { brand: b, avgPrice: s.avgPrice } : null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.avgPrice - b.avgPrice);
-
-    const ctx = document.getElementById(canvasId)?.getContext('2d');
-    if (!ctx || !entries.length) return;
-
-    const bgColors = entries.map((e) =>
-      e.brand === brand ? brandColor(e.brand) : brandColor(e.brand) + '55'
-    );
-    const borderColors = entries.map((e) =>
-      e.brand === brand ? brandColor(e.brand) : 'transparent'
-    );
-
-    charts[canvasId] = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: entries.map((e) => e.brand),
-        datasets: [{
-          data: entries.map((e) => Math.round(e.avgPrice)),
-          backgroundColor: bgColors,
-          borderColor: borderColors,
-          borderWidth: 2,
-          borderRadius: 6,
-          borderSkipped: false,
-        }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (c) => ` $${c.parsed.x}` } },
-        },
-        scales: {
-          x: {
-            beginAtZero: false,
-            ticks: { callback: (v) => '$' + v, font: { size: 11 } },
-            grid: { color: '#f0f0f0' },
-            border: { display: false },
-          },
-          y: {
-            ticks: {
-              font: { size: 12, weight: (ctx) => ctx.tick.label === brand ? 'bold' : 'normal' },
-              color: (ctx) => ctx.tick.label === brand ? brandColor(brand) : '#334155',
-            },
-            grid: { display: false },
-            border: { display: false },
-          },
-        },
-      },
-    });
-  });
+    </div>`;
 }
 
 // ── Main render ────────────────────────────────────────────────────────────
 
 function render() {
-  if (state.view === 'home') {
-    renderHome();
-  } else if (state.view === 'brand' && state.currentCat && state.currentBrand) {
-    renderBrand(state.currentCat, state.currentBrand);
-  } else if (state.view === 'category' && state.currentCat) {
-    renderCategory(state.currentCat);
+  switch (state.currentView) {
+    case 'resumen':     renderResumen();     break;
+    case 'misMarcas':   renderMisMarcas();   break;
+    case 'ofertas':     renderOfertas();     break;
+    case 'comparativa': renderComparativa(); break;
+    case 'cobertura':   renderCobertura();   break;
+    default:            renderResumen();
   }
 }
 
 // ── Filter wiring ──────────────────────────────────────────────────────────
 
 function initFilters() {
-  document.querySelectorAll('.cat-pill').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (state.view === 'home') render();
-    });
-  });
-
   document.querySelectorAll('#chipSupers .chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const s = chip.dataset.super;
@@ -878,20 +818,13 @@ function initFilters() {
       render();
     });
   });
+}
 
-  document.querySelectorAll('#chipMarcas .chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const m = chip.dataset.marca;
-      if (state.activeBrands.has(m)) {
-        state.activeBrands.delete(m);
-        chip.classList.remove('active');
-      } else {
-        state.activeBrands.add(m);
-        chip.classList.add('active');
-      }
-      destroyAllCharts();
-      render();
-    });
+// ── Nav wiring ─────────────────────────────────────────────────────────────
+
+function initNav() {
+  document.querySelectorAll('.nav-tab').forEach((btn) => {
+    btn.addEventListener('click', () => setView(btn.dataset.view));
   });
 }
 
@@ -917,7 +850,6 @@ async function doRefresh() {
     const data = await res.json();
     state.raw = data;
     updateLastUpdate();
-    updateCategoryBadges();
     clearToasts();
 
     const count   = data.items?.length ?? 0;
@@ -961,7 +893,6 @@ async function loadData() {
     const data = await res.json();
     state.raw  = data;
     updateLastUpdate();
-    updateCategoryBadges();
     render();
   } catch (e) {
     state.raw = { generatedAt: null, items: [] };
@@ -974,7 +905,8 @@ async function loadData() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initFilters();
+  initNav();
   document.getElementById('btnRefresh').addEventListener('click', doRefresh);
-  document.getElementById('headerHome')?.addEventListener('click', () => setView('home'));
+  document.getElementById('headerHome')?.addEventListener('click', () => setView('resumen'));
   await loadData();
 });

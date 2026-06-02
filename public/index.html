@@ -32,26 +32,16 @@
     </div>
   </header>
 
-  <!-- ═══ CATEGORY SELECTOR ════════════════════════════════════════════ -->
-  <div class="cat-selector-bar" id="catSelectorBar">
-    <button class="cat-pill active" data-cat="Pan de Molde" style="--cat-color: var(--molde)">
-      <span class="cat-pill-emoji">🍞</span>
-      <span class="cat-pill-name">PAN DE MOLDE</span>
-      <span class="cat-pill-badge" id="badgeMolde">—</span>
-    </button>
-    <button class="cat-pill active" data-cat="Pan de Viena" style="--cat-color: var(--viena)">
-      <span class="cat-pill-emoji">🥖</span>
-      <span class="cat-pill-name">PAN DE VIENA</span>
-      <span class="cat-pill-badge" id="badgeViena">—</span>
-    </button>
-    <button class="cat-pill active" data-cat="Pan de Tortuga" style="--cat-color: var(--tortuga)">
-      <span class="cat-pill-emoji">🍔</span>
-      <span class="cat-pill-name">PAN DE HAMBURGUESA</span>
-      <span class="cat-pill-badge" id="badgeTortuga">—</span>
-    </button>
-  </div>
+  <!-- ═══ MAIN NAV ════════════════════════════════════════════════════ -->
+  <nav class="main-nav" id="mainNav">
+    <button class="nav-tab active" data-view="resumen">Resumen</button>
+    <button class="nav-tab" data-view="misMarcas">Mis Marcas</button>
+    <button class="nav-tab" data-view="ofertas">Ofertas</button>
+    <button class="nav-tab" data-view="comparativa">Comparativa</button>
+    <button class="nav-tab" data-view="cobertura">Cobertura</button>
+  </nav>
 
-  <!-- ═══ FILTER BAR ════════════════════════════════════════════════════ -->
+  <!-- ═══ FILTER BAR ════════════════════════════════════════════════════════ -->
   <div class="filter-bar" id="filterBar">
     <div class="filter-section">
       <span class="filter-label">Supermercados:</span>
@@ -60,19 +50,6 @@
         <button class="chip chip-tata active" data-super="TaTa">TaTa</button>
         <button class="chip chip-ti active" data-super="Tienda Inglesa">Tienda Inglesa</button>
         <button class="chip chip-ed active" data-super="El Dorado">El Dorado</button>
-      </div>
-    </div>
-    <div class="filter-divider"></div>
-    <div class="filter-section">
-      <span class="filter-label">Marcas:</span>
-      <div class="chip-row" id="chipMarcas">
-        <button class="chip chip-own active" data-marca="Bimbo">Bimbo</button>
-        <button class="chip chip-own active" data-marca="Los Sorchantes">Los Sorchantes</button>
-        <button class="chip chip-comp active" data-marca="Magno">Magno</button>
-        <button class="chip chip-comp active" data-marca="Bauducco">Bauducco</button>
-        <button class="chip chip-comp active" data-marca="Visconti">Visconti</button>
-        <button class="chip chip-comp active" data-marca="Marbella">Marbella</button>
-        <button class="chip chip-comp active" data-marca="Precio Líder">Precio Líder</button>
       </div>
     </div>
   </div>

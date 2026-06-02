@@ -956,3 +956,235 @@ tbody td {
   .detail-tab-panel { display: block !important; }
   canvas { max-width: 100%; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   5-View Navigation
+   ═══════════════════════════════════════════════════════════════════════ */
+.main-nav {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 90;
+  display: flex;
+  overflow-x: auto;
+  gap: 4px;
+  padding: 8px 16px;
+  background: white;
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.nav-tab {
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: .83rem;
+  border: none;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.nav-tab:hover { background: #e3f2fd; color: var(--blue); }
+.nav-tab.active { background: #1976d2; color: white; }
+
+/* ── Adjust filter bar sticky offset (no cat-bar anymore) ── */
+.filter-bar {
+  top: calc(var(--header-h) + 52px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Summary KPIs
+   ═══════════════════════════════════════════════════════════════════════ */
+.summary-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 16px 0 4px;
+}
+
+.kpi-card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+}
+
+.kpi-val {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #1976d2;
+  line-height: 1.1;
+}
+
+.kpi-lbl {
+  font-size: .75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Resumen Grid
+   ═══════════════════════════════════════════════════════════════════════ */
+.resumen-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  padding: 12px 0 20px;
+}
+
+.resumen-card {
+  background: white;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Mis Marcas Hero Grid
+   ═══════════════════════════════════════════════════════════════════════ */
+.mm-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  padding: 0 0 0;
+}
+
+.mm-hero-card {
+  background: white;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  border-left: 4px solid #1976d2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Section Card (shared)
+   ═══════════════════════════════════════════════════════════════════════ */
+.section-card {
+  background: white;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.section-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.section-card-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.section-card-meta {
+  font-size: .8rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Insights
+   ═══════════════════════════════════════════════════════════════════════ */
+.insight-bar {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.insight {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: .85rem;
+  font-weight: 600;
+}
+
+.insight-green { background: #e8f5e9; color: #2e7d32; }
+.insight-red   { background: #ffebee; color: #c62828; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Coverage cells
+   ═══════════════════════════════════════════════════════════════════════ */
+.cov-cell  { text-align: center; padding: 8px 12px; font-size: .85rem; }
+.cov-own   { background: #e3f2fd; color: #1565c0; font-weight: 700; }
+.cov-comp  { background: #f3e5f5; color: #6a1b9a; }
+.cov-zero  { color: #ccc; }
+.cov-total { background: #f8fafc; font-weight: 700; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Offer category tag
+   ═══════════════════════════════════════════════════════════════════════ */
+.offer-cat-tag {
+  font-size: .75rem;
+  background: #fff3e0;
+  color: #e65100;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Misc helpers
+   ═══════════════════════════════════════════════════════════════════════ */
+.mm-offer-badge {
+  display: block;
+  margin-top: 8px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: .85rem;
+  font-weight: 600;
+}
+
+.mm-no-offer {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: .85rem;
+}
+
+.price-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.num-cell { text-align: center; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   App main — remove default padding so section-cards butt up nicely
+   ═══════════════════════════════════════════════════════════════════════ */
+.app-main {
+  padding: 20px 24px 72px;
+  gap: 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Responsive overrides for new views
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .resumen-grid   { grid-template-columns: 1fr; }
+  .mm-hero-grid   { grid-template-columns: 1fr; }
+  .summary-kpis   { grid-template-columns: repeat(2, 1fr); }
+  .filter-bar     { top: calc(var(--header-h) + 52px); }
+}
+
+@media (max-width: 480px) {
+  .summary-kpis { grid-template-columns: repeat(2, 1fr); }
+  .kpi-val      { font-size: 1.4rem; }
+  .app-main     { padding: 12px 12px 48px; }
+}
+
