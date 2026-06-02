@@ -37,7 +37,9 @@ export function classifyCategory(name) {
   const n = (name || '').toLowerCase();
   if (/\btortuga\b|\bhamburguesa\b/.test(n)) return 'Pan de Tortuga';
   if (/\bviena\b|\bpanchos?\b/.test(n)) return 'Pan de Viena';
-  if (/\b(molde|lactal|lacteado|sandwich|tostado|miga|americano|blanco|integral)\b/.test(n)) return 'Pan de Molde';
+  if (/\b(molde|lactal|lacteado|sandwich|tostado|miga|americano|blanco|integral|negro|salvado|centeno|brioche|artesano|tierno|suave|casero|campo|extra|clasico|clásico|especial|grande|familiar|rallado)\b/.test(n)) return 'Pan de Molde';
+  // Fallback: any product containing "pan" that didn't match viena/tortuga → Pan de Molde
+  if (/\bpan\b/.test(n)) return 'Pan de Molde';
   return null;
 }
 

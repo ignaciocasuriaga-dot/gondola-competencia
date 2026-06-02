@@ -15,15 +15,18 @@ const DATA_FILE = process.env.DATA_FILE
   || (__dirname.startsWith('/var/task') ? '/tmp/gondola-latest.json' : join(__dirname, '..', 'data', 'latest.json'));
 
 export const SEARCH_TERMS = [
-  'pan bimbo', 'bimbo pan', 'bimbo artesano', 'los sorchantes', 'sorchantes',
-  'pan de molde', 'pan lactal', 'pan sandwich',
+  // Propias
+  'pan bimbo', 'bimbo', 'bimbo artesano',
+  'los sorchantes', 'sorchantes',
+  // Categorías genéricas (capturan todas las marcas)
+  'pan de molde', 'pan lactal', 'pan sandwich', 'pan de miga',
   'pan tortuga', 'pan hamburguesa',
-  'pan viena', 'pan pancho', 'pan panchos', 'panchos pan',
-  'magno pan', 'pan magno',
-  'bauducco', 'pan bauducco', 'bauducco pan', 'bauduco', 'pan bauduco', 'pan de miga bauduco',
-  'visconti pan', 'pan visconti',
-  'marbella pan', 'pan marbella',
-  'precio lider pan', 'pan precio lider',
+  'pan viena', 'pan pancho', 'pan panchos',
+  // Competidores — nombre solo (máxima cobertura)
+  'magno',
+  'bauduco', 'bauducco',
+  'visconti',
+  'marbella',
 ];
 
 export async function runScrape() {
